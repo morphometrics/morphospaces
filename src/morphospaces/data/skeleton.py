@@ -5,83 +5,11 @@ from scipy.ndimage import distance_transform_edt
 from scipy.spatial import KDTree
 from skimage.morphology import ball, binary_dilation
 
+from morphospaces.data.data_utils import (
+    draw_line_segment,
+    find_indices_within_radius,
+)
 from morphospaces.io.hdf5 import write_multi_dataset_hdf
-
-
-def select_points_in_bounding_box(
-    points: np.ndarray,
-    lower_left_corner: np.ndarray,
-    upper_right_corner: np.ndarray,
-) -> np.ndarray:
-    """From an array of points, select all points inside a specified
-    axis-aligned bounding box.
-
-    Parameters
-    ----------
-    points : np.ndarray
-        The n x d array containing the n, d-dimensional points to check.
-    lower_left_corner : np.ndarray
-        The point corresponding to the corner of the bounding box
-        with lowest coordinate values.
-    upper_right_corner : np.ndarray
-        The point corresponding to the corner of the bounding box
-        with the highest coordinate values.
-
-    Returns
-    -------
-    points_in_box : np.ndarray
-        The n x d array containing the n points inside of the
-        specified bounding box.
-    """
-    in_box_mask = np.all(
-        np.logical_and(
-            lower_left_corner <= points, upper_right_corner >= points
-        ),
-        axis=1,
-    )
-    return points[in_box_mask]
-
-
-def draw_line_segment(
-    start_point: np.ndarray,
-    end_point: np.ndarray,
-    skeleton_image: np.ndarray,
-    fill_value: int = 1,
-):
-    """Draw a line segment in-place.
-
-    Note: line will be clipped if it extends beyond the
-    bounding box of the skeleton_image.
-
-    Parameters
-    ----------
-    start_point : np.ndarray
-        (d,) array containing the starting point of the line segment.
-        Must be an integer index.
-    end_point : np.ndarray
-        (d,) array containing the end point of the line segment.
-        Most be an integer index
-    skeleton_image : np.ndarray
-        The image in which to draw the line segment.
-        Must be the same dimensionality as start_point and end_point.
-    fill_value : int
-        The value to use for the line segment.
-        Default value is 1.
-    """
-    branch_length = np.linalg.norm(end_point - start_point)
-    n_skeleton_points = int(2 * branch_length)
-    skeleton_points = np.linspace(start_point, end_point, n_skeleton_points)
-
-    # filter for points within the image
-    image_bounds = np.asarray(skeleton_image.shape) - 1
-    skeleton_points = select_points_in_bounding_box(
-        points=skeleton_points,
-        lower_left_corner=np.array([0, 0, 0]),
-        upper_right_corner=image_bounds,
-    ).astype(int)
-    skeleton_image[
-        skeleton_points[:, 0], skeleton_points[:, 1], skeleton_points[:, 2]
-    ] = fill_value
 
 
 def make_single_branch_point_skeleton(
@@ -245,6 +173,50 @@ def make_segmentation_distance_image(
     return distance_image, scaled_background_vector_image
 
 
+def draw_proximal_vector_field(
+    vector_image: np.ndarray, point_coordinate: np.ndarray, radius: int
+):
+    image_shape = tuple(np.asarray(vector_image.shape)[1:])
+    point_proximal_indices = find_indices_within_radius(
+        array_shape=image_shape, center_point=point_coordinate, radius=radius
+    )
+
+    # get vectors pointing towards the point
+    point_vectors = point_coordinate[None, :] - point_proximal_indices
+
+    # remove the vectors with magnitude 0 and normalize
+    magnitudes = np.linalg.norm(point_vectors, axis=1)
+    point_vectors = point_vectors[magnitudes != 0]
+    point_proximal_indices = point_proximal_indices[magnitudes != 0]
+    magnitudes = magnitudes[magnitudes != 0]
+
+    normalized_point_vectors = point_vectors / magnitudes[:, None]
+
+    # embed the vectors in an image
+    for dimension_index in range(3):
+        vector_image[
+            dimension_index,
+            point_proximal_indices[:, 0],
+            point_proximal_indices[:, 1],
+            point_proximal_indices[:, 2],
+        ] = normalized_point_vectors[:, dimension_index]
+
+
+def make_proximal_vector_image(
+    image_shape: Tuple[int, int, int],
+    point_coordinates: np.ndarray,
+    radius: int,
+):
+
+    vector_image_shape = (len(image_shape),) + image_shape
+    vector_image = np.zeros(vector_image_shape)
+    for point in np.atleast_2d(point_coordinates):
+        draw_proximal_vector_field(
+            vector_image=vector_image, point_coordinate=point, radius=radius
+        )
+    return vector_image
+
+
 def make_single_branch_point_skeleton_dataset(
     file_name: str,
     root_point: np.ndarray,
@@ -283,9 +255,6 @@ def make_single_branch_point_skeleton_dataset(
     segmentation_image = binary_dilation(
         skeleton_image, footprint=ball(dilation_size)
     )
-    vector_image = compute_skeleton_vector_field(
-        skeleton_image=skeleton_image, segmentation_image=segmentation_image
-    )
 
     (
         segmentation_distance_image,
@@ -296,6 +265,34 @@ def make_single_branch_point_skeleton_dataset(
     end_points = np.concatenate(
         (np.atleast_2d(root_point), np.atleast_2d(tip_points))
     )
+
+    # make the vector field images
+    skeleton_vector_image = compute_skeleton_vector_field(
+        skeleton_image=skeleton_image, segmentation_image=segmentation_image
+    )
+    branch_point_vector_image = make_proximal_vector_image(
+        image_shape=skeleton_image.shape,
+        point_coordinates=branch_point,
+        radius=7,
+    )
+    end_point_vector_image = make_proximal_vector_image(
+        image_shape=skeleton_image.shape,
+        point_coordinates=end_points,
+        radius=7,
+    )
+
+    # combine vector images into single image
+    vector_image = np.concatenate(
+        (
+            skeleton_vector_image,
+            branch_point_vector_image,
+            end_point_vector_image,
+        ),
+        axis=0,
+    )
+
+    # remove vector values outside of the segmentation
+    vector_image[:, np.logical_not(segmentation_image)] = 0
 
     # write the file
     write_multi_dataset_hdf(
