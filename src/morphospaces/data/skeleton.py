@@ -9,9 +9,9 @@ from morphospaces.io.hdf5 import write_multi_dataset_hdf
 
 
 def select_points_in_bounding_box(
-        points: np.ndarray,
-        lower_left_corner: np.ndarray,
-        upper_right_corner: np.ndarray
+    points: np.ndarray,
+    lower_left_corner: np.ndarray,
+    upper_right_corner: np.ndarray,
 ) -> np.ndarray:
     """From an array of points, select all points inside a specified
     axis-aligned bounding box.
@@ -35,19 +35,18 @@ def select_points_in_bounding_box(
     """
     in_box_mask = np.all(
         np.logical_and(
-            lower_left_corner <= points,
-            upper_right_corner >= points
+            lower_left_corner <= points, upper_right_corner >= points
         ),
-        axis=1
+        axis=1,
     )
     return points[in_box_mask]
 
 
 def draw_line_segment(
-        start_point: np.ndarray,
-        end_point: np.ndarray,
-        skeleton_image: np.ndarray,
-        fill_value: int = 1
+    start_point: np.ndarray,
+    end_point: np.ndarray,
+    skeleton_image: np.ndarray,
+    fill_value: int = 1,
 ):
     """Draw a line segment in-place.
 
@@ -71,23 +70,17 @@ def draw_line_segment(
     """
     branch_length = np.linalg.norm(end_point - start_point)
     n_skeleton_points = int(2 * branch_length)
-    skeleton_points = np.linspace(
-        start_point,
-        end_point,
-        n_skeleton_points
-    )
+    skeleton_points = np.linspace(start_point, end_point, n_skeleton_points)
 
     # filter for points within the image
     image_bounds = np.asarray(skeleton_image.shape) - 1
     skeleton_points = select_points_in_bounding_box(
         points=skeleton_points,
         lower_left_corner=np.array([0, 0, 0]),
-        upper_right_corner=image_bounds
+        upper_right_corner=image_bounds,
     ).astype(int)
     skeleton_image[
-        skeleton_points[:, 0],
-        skeleton_points[:, 1],
-        skeleton_points[:, 2]
+        skeleton_points[:, 0], skeleton_points[:, 1], skeleton_points[:, 2]
     ] = fill_value
 
 
@@ -95,9 +88,9 @@ def make_single_branch_point_skeleton(
     root_point: np.ndarray,
     branch_point: np.ndarray,
     tip_points: np.ndarray,
-    image_shape: Tuple[int, int, int]
+    image_shape: Tuple[int, int, int],
 ) -> np.ndarray:
-    """Make a skeleton with a single branching point.
+    r"""Make a skeleton with a single branching point.
                        _______ tip
                       /
     root_point -----< branch_point
@@ -124,24 +117,23 @@ def make_single_branch_point_skeleton(
 
     # add the root
     draw_line_segment(
-        start_point = root_point,
-        end_point = branch_point,
-        skeleton_image=skeleton_image
+        start_point=root_point,
+        end_point=branch_point,
+        skeleton_image=skeleton_image,
     )
 
     # add the tips
     for tip_point in tip_points:
         draw_line_segment(
-            start_point = branch_point,
-            end_point = tip_point,
-            skeleton_image=skeleton_image
+            start_point=branch_point,
+            end_point=tip_point,
+            skeleton_image=skeleton_image,
         )
     return skeleton_image
 
 
 def compute_skeleton_vector_field(
-        skeleton_image: np.ndarray,
-        segmentation_image: np.ndarray
+    skeleton_image: np.ndarray, segmentation_image: np.ndarray
 ) -> np.ndarray:
     """Compute the vector field pointing towards the nearest
     skeleton point for each voxel in the segmentation.
@@ -165,19 +157,19 @@ def compute_skeleton_vector_field(
     """
     # get the skeleton coordinates and make a tree
     skeleton_coordinates = np.column_stack(np.where(skeleton_image))
-    skeleton_kdtree = KDTree(skeleton_coordinates
-                             )
+    skeleton_kdtree = KDTree(skeleton_coordinates)
 
     # get the segmentation coordinates
-    segmentation_coordinates = np.column_stack(
-        np.where(segmentation_image)
-    )
+    segmentation_coordinates = np.column_stack(np.where(segmentation_image))
 
     # get the nearest skeleton point for each
-    distance_to_skeleton, nearest_skeleton_point_indices = skeleton_kdtree.query(
-        segmentation_coordinates
-    )
-    nearest_skeleton_point = skeleton_coordinates[nearest_skeleton_point_indices]
+    (
+        distance_to_skeleton,
+        nearest_skeleton_point_indices,
+    ) = skeleton_kdtree.query(segmentation_coordinates)
+    nearest_skeleton_point = skeleton_coordinates[
+        nearest_skeleton_point_indices
+    ]
 
     # get the pixels that are not containing the skeleton
     non_skeleton_mask = distance_to_skeleton > 0
@@ -187,14 +179,18 @@ def compute_skeleton_vector_field(
 
     # get the vector pointing to the skeleton
     vector_to_skeleton = nearest_skeleton_point - segmentation_coordinates
-    unit_vector_to_skeleton = vector_to_skeleton / distance_to_skeleton[:, None]
+    unit_vector_to_skeleton = (
+        vector_to_skeleton / distance_to_skeleton[:, None]
+    )
 
     # flip and rescale the distance
     normalized_distance = distance_to_skeleton / distance_to_skeleton.max()
     flipped_distance = 1 - normalized_distance
 
     # scale the vectors by the flipped/normalized distance
-    scaled_vector_to_skeleton = unit_vector_to_skeleton * flipped_distance[:, None]
+    scaled_vector_to_skeleton = (
+        unit_vector_to_skeleton * flipped_distance[:, None]
+    )
 
     # embed the vectors into an image
     image_shape = (3,) + skeleton_image.shape
@@ -204,14 +200,14 @@ def compute_skeleton_vector_field(
             dimension_index,
             segmentation_coordinates[:, 0],
             segmentation_coordinates[:, 1],
-            segmentation_coordinates[:, 2]
+            segmentation_coordinates[:, 2],
         ] = scaled_vector_to_skeleton[:, dimension_index]
 
     return vector_image
 
 
 def make_segmentation_distance_image(
-        segmentation_image: np.ndarray
+    segmentation_image: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Create images where each voxel describes the relationship
     to the nearest background pixel.
@@ -235,9 +231,7 @@ def make_segmentation_distance_image(
         vector_image[2, ...] contains the 2nd component of the vector field.
     """
     distance_image, background_indices = distance_transform_edt(
-        segmentation_image,
-        return_distances=True,
-        return_indices=True
+        segmentation_image, return_distances=True, return_indices=True
     )
 
     # get the vector pointing towards the nearest background
@@ -252,12 +246,12 @@ def make_segmentation_distance_image(
 
 
 def make_single_branch_point_skeleton_dataset(
-        file_name: str,
-        root_point: np.ndarray,
-        branch_point: np.ndarray,
-        tip_points: np.ndarray,
-        dilation_size: int,
-        image_shape: Tuple[int, int, int]
+    file_name: str,
+    root_point: np.ndarray,
+    branch_point: np.ndarray,
+    tip_points: np.ndarray,
+    dilation_size: int,
+    image_shape: Tuple[int, int, int],
 ):
     """Write an hdf5 dataset containing a single branch point skeleton
     and auxillary images.
@@ -283,22 +277,20 @@ def make_single_branch_point_skeleton_dataset(
         root_point=root_point,
         branch_point=branch_point,
         tip_points=tip_points,
-        image_shape=image_shape
-
+        image_shape=image_shape,
     )
 
     segmentation_image = binary_dilation(
-        skeleton_image,
-        footprint=ball(dilation_size)
+        skeleton_image, footprint=ball(dilation_size)
     )
     vector_image = compute_skeleton_vector_field(
-        skeleton_image=skeleton_image,
-        segmentation_image=segmentation_image
+        skeleton_image=skeleton_image, segmentation_image=segmentation_image
     )
 
-    segmentation_distance_image, background_vector_image = make_segmentation_distance_image(
-        segmentation_image=segmentation_image
-    )
+    (
+        segmentation_distance_image,
+        background_vector_image,
+    ) = make_segmentation_distance_image(segmentation_image=segmentation_image)
 
     # store all end points in a single array
     end_points = np.concatenate(
@@ -315,5 +307,5 @@ def make_single_branch_point_skeleton_dataset(
         end_points=end_points,
         skeleton_vector_image=vector_image,
         segmentation_distance_image=segmentation_distance_image,
-        background_vector_image=background_vector_image
+        background_vector_image=background_vector_image,
     )

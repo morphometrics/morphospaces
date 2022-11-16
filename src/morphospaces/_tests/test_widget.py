@@ -1,5 +1,4 @@
 import numpy as np
-
 from morphospace import ExampleQWidget, example_magic_widget
 
 

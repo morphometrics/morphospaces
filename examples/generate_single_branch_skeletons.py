@@ -2,8 +2,9 @@ import numpy as np
 from numpy.random import default_rng
 
 from morphospaces.data.data_utils import random_indices_in_bounding_box
-from morphospaces.data.skeleton import make_single_branch_point_skeleton_dataset
-
+from morphospaces.data.skeleton import (
+    make_single_branch_point_skeleton_dataset,
+)
 
 n_skeletons = 300
 
@@ -12,13 +13,13 @@ tip_points_0 = random_indices_in_bounding_box(
     n_points=n_skeletons,
     lower_left_corner=np.array([0, 0, 60]),
     upper_right_corner=np.array([75, 20, 75]),
-    random_seed=0
+    random_seed=0,
 )
 tip_points_1 = random_indices_in_bounding_box(
     n_points=n_skeletons,
     lower_left_corner=np.array([0, 60, 60]),
     upper_right_corner=np.array([75, 75, 75]),
-    random_seed=1
+    random_seed=1,
 )
 tip_points = np.stack((tip_points_0, tip_points_1), axis=1)
 
@@ -27,7 +28,7 @@ branch_points = random_indices_in_bounding_box(
     n_points=n_skeletons,
     lower_left_corner=np.array([0, 20, 30]),
     upper_right_corner=np.array([75, 60, 40]),
-    random_seed=2
+    random_seed=2,
 )
 
 # root point
@@ -35,7 +36,7 @@ root_points = random_indices_in_bounding_box(
     n_points=n_skeletons,
     lower_left_corner=np.array([0, 20, 5]),
     upper_right_corner=np.array([75, 40, 20]),
-    random_seed=3
+    random_seed=3,
 )
 
 # dilation sizes
@@ -53,5 +54,5 @@ for index, (root, branch, tip, dilation) in enumerate(
         branch_point=branch,
         tip_points=tip,
         dilation_size=dilation,
-        image_shape=image_shape
+        image_shape=image_shape,
     )

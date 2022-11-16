@@ -8,7 +8,7 @@ def _write_dataset_from_array(
     file_handle: h5py.File,
     dataset_name: str,
     dataset_array: np.ndarray,
-    compression: str = 'gzip',
+    compression: str = "gzip",
 ):
     file_handle.create_dataset(
         dataset_name,
@@ -23,9 +23,9 @@ def _write_dataset_from_dict(
     file_handle: h5py.File,
     dataset_name: str,
     dataset: Dict[str, Any],
-    compression: str = 'gzip',
+    compression: str = "gzip",
 ):
-    dataset_array = dataset['data']
+    dataset_array = dataset["data"]
     dset = file_handle.create_dataset(
         dataset_name,
         dataset_array.shape,
@@ -34,7 +34,7 @@ def _write_dataset_from_dict(
         compression=compression,
     )
 
-    dataset_attrs = dataset.get('attrs', None)
+    dataset_attrs = dataset.get("attrs", None)
     if dataset_attrs is not None:
         for k, v in dataset_attrs.items():
             dset.attrs[k] = v
@@ -60,8 +60,8 @@ def write_multi_dataset_hdf(
         would yield a dataset named "my_data" containing "my_array".
     """
     if len(kwargs) == 0:
-        raise ValueError('Must supply at least one dataset as a kwarg')
-    with h5py.File(file_path, 'w') as f:
+        raise ValueError("Must supply at least one dataset as a kwarg")
+    with h5py.File(file_path, "w") as f:
         for k, v in kwargs.items():
             if isinstance(v, np.ndarray):
                 _write_dataset_from_array(

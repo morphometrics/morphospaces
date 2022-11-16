@@ -6,7 +6,7 @@ def random_indices_in_bounding_box(
     n_points: int,
     lower_left_corner: np.ndarray,
     upper_right_corner: np.ndarray,
-    random_seed: float = 42
+    random_seed: float = 42,
 ) -> np.ndarray:
     """Get an array of random indices contained in a bounding box.
 
@@ -28,5 +28,5 @@ def random_indices_in_bounding_box(
     return rng.integers(
         lower_left_corner,
         upper_right_corner,
-        size=(n_points, len(lower_left_corner))
+        size=(n_points, len(lower_left_corner)),
     )
