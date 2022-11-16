@@ -299,7 +299,7 @@ def make_single_branch_point_skeleton_dataset(
 
     # write the file
     write_multi_dataset_hdf(
-        file_name=file_name,
+        file_path=file_name,
         compression="gzip",
         skeleton_image=skeleton_image,
         segmentation_image=segmentation_image,

@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 from numpy.random import default_rng
 
@@ -45,11 +47,19 @@ dilation_sizes = rng.integers(5, 15, size=(n_skeletons,))
 
 image_shape = (80, 80, 80)
 
+
+# make the directory
+dataset_folder_name = "single_branch_point_skeleton_datasets_20221116"
+folder_path = os.path.join(".", dataset_folder_name)
+if not os.path.isdir(folder_path):
+    os.mkdir(folder_path)
+
 for index, (root, branch, tip, dilation) in enumerate(
     zip(root_points, branch_points, tip_points, dilation_sizes)
 ):
+    file_name = os.path.join(folder_path, f"skeleton_dataset_{index}.h5")
     make_single_branch_point_skeleton_dataset(
-        file_name=f"./skeleton_datasets/skeleton_dataset_{index}.h5",
+        file_name=file_name,
         root_point=root,
         branch_point=branch,
         tip_points=tip,
