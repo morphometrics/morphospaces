@@ -10,6 +10,11 @@ from morphospaces.data.skeleton import (
 
 n_skeletons = 300
 
+# kernel sizes for making the skeletonization target
+skeleton_dilation_size = 1
+skeleton_gaussian_size = 1
+point_gaussian_size = 2
+
 # make the tip points
 tip_points_0 = random_indices_in_bounding_box(
     n_points=n_skeletons,
@@ -63,6 +68,9 @@ for index, (root, branch, tip, dilation) in enumerate(
         root_point=root,
         branch_point=branch,
         tip_points=tip,
-        dilation_size=dilation,
+        segmentation_dilation_size=dilation,
         image_shape=image_shape,
+        skeleton_dilation_size=skeleton_dilation_size,
+        skeleton_gaussian_size=skeleton_gaussian_size,
+        point_gaussian_size=point_gaussian_size,
     )
