@@ -3,11 +3,13 @@ from typing import Tuple
 import numpy as np
 from scipy.ndimage import distance_transform_edt
 from scipy.spatial import KDTree
+from skimage.filters import gaussian
 from skimage.morphology import ball, binary_dilation
 
 from morphospaces.data.data_utils import (
     draw_line_segment,
     find_indices_within_radius,
+    select_points_in_bounding_box,
 )
 from morphospaces.io.hdf5 import write_multi_dataset_hdf
 
@@ -217,13 +219,89 @@ def make_proximal_vector_image(
     return vector_image
 
 
+def make_skeleton_blur_image(
+    skeleton_image: np.ndarray, dilation_size: float, gaussian_size: float
+) -> np.ndarray:
+    # make a blurred skeleton
+    dilated_skeleton = binary_dilation(skeleton_image, ball(dilation_size))
+    skeleton_blur = gaussian(dilated_skeleton, gaussian_size)
+
+    # normalize the values
+    skeleton_blur /= skeleton_blur.max()
+
+    # ensure the skeleton voxels have a value of 1
+    skeleton_coordinates = np.where(skeleton_image)
+    skeleton_blur[skeleton_coordinates] = 1
+
+    return skeleton_blur
+
+
+def make_point_blur(
+    point_coordinates: np.ndarray,
+    image_shape: Tuple[int, int, int],
+    gaussian_size: float,
+) -> np.ndarray:
+    image = np.zeros(image_shape)
+
+    # get just the points inside the image
+    point_coordinates = select_points_in_bounding_box(
+        points=np.atleast_2d(point_coordinates),
+        lower_left_corner=np.array([0, 0, 0]),
+        upper_right_corner=np.asarray(image_shape),
+    )
+
+    # add the points to the image
+    image[
+        point_coordinates[:, 0],
+        point_coordinates[:, 1],
+        point_coordinates[:, 2],
+    ] = 1
+
+    blurred_image = gaussian(image, gaussian_size)
+    return blurred_image / blurred_image.max()
+
+
+def make_skeletonization_target(
+    skeleton_image: np.ndarray,
+    skeleton_dilation_size: float,
+    skeleton_gaussian_size: float,
+    end_points: np.ndarray,
+    branch_points: np.ndarray,
+    point_gaussian_size: float,
+):
+    skeleton_blur = make_skeleton_blur_image(
+        skeleton_image=skeleton_image,
+        dilation_size=skeleton_dilation_size,
+        gaussian_size=skeleton_gaussian_size,
+    )
+
+    skeleton_coordinates = np.where(skeleton_image)
+    skeleton_blur[skeleton_coordinates] = 1
+
+    end_points_blur = make_point_blur(
+        point_coordinates=end_points,
+        image_shape=skeleton_image.shape,
+        gaussian_size=point_gaussian_size,
+    )
+    branch_points_blur = make_point_blur(
+        point_coordinates=branch_points,
+        image_shape=skeleton_image.shape,
+        gaussian_size=point_gaussian_size,
+    )
+
+    return np.stack([skeleton_blur, end_points_blur, branch_points_blur])
+
+
 def make_single_branch_point_skeleton_dataset(
     file_name: str,
     root_point: np.ndarray,
     branch_point: np.ndarray,
     tip_points: np.ndarray,
-    dilation_size: int,
+    segmentation_dilation_size: int,
     image_shape: Tuple[int, int, int],
+    skeleton_gaussian_size: float,
+    skeleton_dilation_size: float,
+    point_gaussian_size: float,
 ):
     """Write an hdf5 dataset containing a single branch point skeleton
     and auxillary images.
@@ -238,12 +316,20 @@ def make_single_branch_point_skeleton_dataset(
         (d,) array containing the point where the root branches into the tips.
     tip_points : np.ndarray
         (n, d) array containing the tip n, d-dimensional tip points.
-    dilation_size : np.ndarray
+    segmentation_dilation_size : np.ndarray
         The size of the morphological dilation (ball kernel) to apply in to
         create the segmentation from the skeleton.
     image_shape : Tuple[int, int, int]
         Shape of the image to embed the skeleton into.
-
+    skeleton_gaussian_size : float
+        Size of the kernel for the Gaussian blur on the skeleton
+        for the skeletonization target.
+    skeleton_dilation_size: float
+        Size of the kernel for the dialation on the skeleton
+        for the skeletonization target.
+    point_gaussian_size : float
+        Size of the kernel for the Gaussian blur on the points
+        for the skeletonization target.
     """
     skeleton_image = make_single_branch_point_skeleton(
         root_point=root_point,
@@ -253,7 +339,7 @@ def make_single_branch_point_skeleton_dataset(
     )
 
     segmentation_image = binary_dilation(
-        skeleton_image, footprint=ball(dilation_size)
+        skeleton_image, footprint=ball(segmentation_dilation_size)
     )
 
     (
@@ -294,6 +380,16 @@ def make_single_branch_point_skeleton_dataset(
     # remove vector values outside of the segmentation
     vector_image[:, np.logical_not(segmentation_image)] = 0
 
+    # make the skeletonization target image
+    skeletonization_target = make_skeletonization_target(
+        skeleton_image=skeleton_image,
+        skeleton_gaussian_size=skeleton_gaussian_size,
+        skeleton_dilation_size=skeleton_dilation_size,
+        end_points=end_points,
+        branch_points=branch_point,
+        point_gaussian_size=point_gaussian_size,
+    )
+
     # write the file
     write_multi_dataset_hdf(
         file_path=file_name,
@@ -305,4 +401,5 @@ def make_single_branch_point_skeleton_dataset(
         skeleton_vector_image=vector_image,
         segmentation_distance_image=segmentation_distance_image,
         background_vector_image=background_vector_image,
+        skeletonization_target=skeletonization_target,
     )
