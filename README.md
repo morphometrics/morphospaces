@@ -1,15 +1,6 @@
 # morphospace
 
-[![License BSD-3](https://img.shields.io/pypi/l/morphospaces.svg?color=green)](https://github.
-com/morphometrics/morphospaces/raw/main/LICENSE)
-[![PyPI](https://img.shields.io/pypi/v/morphospaces.svg?color=green)](https://pypi.org/project/morphospaces)
-[![Python Version](https://img.shields.io/pypi/pyversions/morphospaces.svg?color=green)](https://python.org)
-[![tests](https://github.com/morphometrics/morphospace/workflows/tests/badge.svg)](https://github.
-com/morphometrics/morphospaces/actions)
-[![codecov](https://codecov.io/gh/morphometrics/morphospace/branch/main/graph/badge.svg)](https://codecov.
-io/gh/morphometrics/morphospaces)
-[![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/morphospace)]
-(https://napari-hub.org/plugins/morphospaces)
+[![License BSD-3](https://img.shields.io/pypi/l/morphospaces.svg?color=green)](https://github.com/morphometrics/morphospaces/raw/main/LICENSE) [![PyPI](https://img.shields.io/pypi/v/morphospaces.svg?color=green)](https://pypi.org/project/morphospaces) [![Python Version](https://img.shields.io/pypi/pyversions/morphospaces.svg?color=green)](https://python.org) [![tests](https://github.com/morphometrics/morphospace/workflows/tests/badge.svg)](https://github.com/morphometrics/morphospaces/actions) [![codecov](https://codecov.io/gh/morphometrics/morphospace/branch/main/graph/badge.svg)](https://codecov.io/gh/morphometrics/morphospaces) [![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/morphospace)](https://napari-hub.org/plugins/morphospaces)
 
 a library for creating  and exploring morphospaces.
 
