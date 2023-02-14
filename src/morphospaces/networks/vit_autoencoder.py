@@ -5,6 +5,7 @@ import torch
 from monai.losses import ContrastiveLoss
 from monai.networks.nets import ViTAutoEnc
 from torch.nn import L1Loss
+from torch.optim import Adam
 
 from morphospaces.networks.constants import (
     VIT_AC_AUG_VIEW_1_KEY,
@@ -23,8 +24,13 @@ class VitAutoencoder(pl.LightningModule):
         hidden_size: int = 768,
         mlp_dim: int = 3072,
         reconstruction_loss_temperature: float = 0.05,
+        learning_rate: float = 1e-4
     ):
         super().__init__()
+
+        # store hyperparameters
+        self.save_hyperparameters()
+        self.learning_rate = learning_rate
 
         # make the model
         self.model = ViTAutoEnc(
@@ -71,22 +77,19 @@ class VitAutoencoder(pl.LightningModule):
         total_loss = reconstruction_loss + (
             contrastive_loss * reconstruction_loss
         )
-
+        self.log("training_loss", total_loss)
         return {"loss": total_loss}
 
     def validation_step(
         self, batch: Dict[str, torch.Tensor], batch_idx: int
     ) -> float:
-        aug_images = batch[VIT_AC_AUG_VIEW_1_KEY]
+        input_images = batch[VIT_AC_AUG_VIEW_1_KEY]
         gt_images = batch[VIT_AC_GT_KEY]
-        total_val_loss = 0
-        val_step = 0
-        for inputs, gt_input in zip(aug_images, gt_images):
-            val_step += 1
-            outputs, outputs_v2 = self.model(inputs)
-            val_loss = self.reconstruction_loss(outputs, gt_input)
-            total_val_loss += val_loss.item()
 
-        total_val_loss /= val_step
+        outputs, _ = self.model(input_images)
+        val_loss = self.reconstruction_loss(outputs, gt_images)
+        self.log("val_loss", val_loss)
+        return val_loss
 
-        return total_val_loss
+    def configure_optimizers(self) -> Adam:
+        return Adam(self.model.parameters(), lr=self.learning_rate)
