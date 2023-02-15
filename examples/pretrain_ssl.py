@@ -160,6 +160,9 @@ image = check_data[VIT_AC_AUG_VIEW_1_KEY][0][0]
 print(f"image shape: {image.shape}")
 
 if __name__ == '__main__':
+    # set the RNG seeds
+    pl.seed_everything(42, workers=True)
+
     # Define DataLoader using MONAI, CacheDataset needs to be used
     train_ds = Dataset(data=train_data, transform=train_transforms)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
