@@ -177,11 +177,14 @@ if __name__ == '__main__':
         monitor="val_loss",
         mode="min",
         dirpath=logdir_path,
+        every_n_epochs=2,
         filename="vit-best",
     )
     last_checkpoint_callback = ModelCheckpoint(
+        save_top_k=1,
         save_last=True,
         dirpath=logdir_path,
+        every_n_epochs=2,
         filename="vit-last",
     )
 

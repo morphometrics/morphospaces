@@ -77,7 +77,7 @@ class VitAutoencoder(pl.LightningModule):
         total_loss = reconstruction_loss + (
             contrastive_loss * reconstruction_loss
         )
-        self.log("training_loss", total_loss)
+        self.log("training_loss", total_loss, batch_size=len(inputs))
         return {"loss": total_loss}
 
     def validation_step(
@@ -88,7 +88,7 @@ class VitAutoencoder(pl.LightningModule):
 
         outputs, _ = self.model(input_images)
         val_loss = self.reconstruction_loss(outputs, gt_images)
-        self.log("val_loss", val_loss)
+        self.log("val_loss", val_loss, batch_size=len(input_images))
         return val_loss
 
     def configure_optimizers(self) -> Adam:
