@@ -18,9 +18,7 @@ class BaseTiledDataset(Dataset):
         self,
         file_path,
         stage,
-        raw_transform,
-        label_transform,
-        weight_transform=None,
+        transform,
         patch_shape: Tuple[int, ...] = (96, 96, 96),
         stride_shape: Tuple[int, ...] = (24, 24, 24),
         patch_filter_ignore_index: Tuple[int, ...] = (0,),
@@ -49,19 +47,22 @@ class BaseTiledDataset(Dataset):
 
         self.raw = self.get_array(file_path, raw_internal_path)
 
-        self.raw_transform = raw_transform
+        self.transform = transform
 
         if stage != "test":
             # create label/weight transform only in train/val phase
-            self.label_transform = label_transform
-            self.label = self.get_array(self.file_path, label_internal_path)
+            if label_internal_path is not None:
+                self.label = self.get_array(
+                    self.file_path, label_internal_path
+                )
+            else:
+                self.label = None
 
             if weight_internal_path is not None:
                 # look for the weight map in the raw file
                 self.weight_map = self.get_array(
                     self.file_path, weight_internal_path
                 )
-                self.weight_transform = weight_transform
             else:
                 self.weight_map = None
 
@@ -92,7 +93,7 @@ class BaseTiledDataset(Dataset):
                         )
 
         # build slice indices for raw and label data sets
-        if patch_threshold > 0:
+        if (patch_threshold > 0) and (self.label is not None):
             slice_builder = FilterSliceBuilder(
                 self.raw,
                 self.label,
@@ -173,43 +174,27 @@ class BaseTiledDataset(Dataset):
 
         # get the slice for a given index 'idx'
         raw_idx = self.raw_slices[idx]
+
         # get the raw data patch for a given slice
-        if self.raw_transform is not None:
-            raw_patch_transformed = self.raw_transform(
-                np.asarray(self.raw[raw_idx])
-            )
-        else:
-            raw_patch_transformed = np.asarray(self.raw[raw_idx])
+        data_patch = {"raw": np.asarray(self.raw[raw_idx])}
 
-        if self.phase == "test":
-            # discard the channel dimension in the slices:
-            # predictor requires only the spatial dimensions of the volume
-            if len(raw_idx) == 4:
-                raw_idx = raw_idx[1:]
-            return raw_patch_transformed, raw_idx
-        else:
-            # get the slice for a given index 'idx'
+        # add the label data
+        if self.label is not None:
             label_idx = self.label_slices[idx]
+            data_patch.update({"label": np.asarray(self.label[label_idx])})
 
-            if self.label_transform is not None:
-                label_patch_transformed = self.label_transform(
-                    np.asarray(self.label[label_idx])
-                )
-            else:
-                label_patch_transformed = np.asarray(self.label[label_idx])
+        # add the weight maps
+        if self.weight_map is not None:
+            weight_idx = self.weight_slices[idx]
+            data_patch.update(
+                {"weights": np.asarray(self.weight_map[weight_idx])}
+            )
 
-            if self.weight_map is not None:
-                weight_idx = self.weight_slices[idx]
-                weight_patch_transformed = self.weight_transform(
-                    self.weight_map[weight_idx]
-                )
-                return (
-                    raw_patch_transformed,
-                    label_patch_transformed,
-                    weight_patch_transformed,
-                )
-            # return the transformed raw and label patches
-            return raw_patch_transformed, label_patch_transformed
+        if self.transform is not None:
+            # transform the data
+            data_patch = self.transform(data_patch)
+
+        return data_patch
 
     def __len__(self):
         return self.patch_count

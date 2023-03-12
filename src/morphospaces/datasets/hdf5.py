@@ -34,9 +34,7 @@ class StandardHDF5Dataset(BaseTiledDataset):
         super().__init__(
             file_path=file_path,
             stage=stage,
-            raw_transform=raw_transform,
-            label_transform=label_transform,
-            weight_transform=weight_transform,
+            transform=raw_transform,
             patch_shape=patch_shape,
             stride_shape=stride_shape,
             patch_filter_ignore_index=patch_filter_ignore_index,
@@ -83,9 +81,7 @@ class LazyHDF5Dataset(BaseTiledDataset):
         super().__init__(
             file_path=file_path,
             stage=stage,
-            raw_transform=raw_transform,
-            label_transform=label_transform,
-            weight_transform=weight_transform,
+            transform=raw_transform,
             patch_shape=patch_shape,
             stride_shape=stride_shape,
             patch_filter_ignore_index=patch_filter_ignore_index,
