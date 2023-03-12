@@ -1,0 +1,159 @@
+import numpy as np
+
+
+class SliceBuilder:
+    """
+    Builds the position of the patches in a given raw/label/weight ndarray
+    based on the patch and stride shape.
+    """
+
+    def __init__(
+        self,
+        raw_dataset,
+        label_dataset,
+        weight_dataset,
+        patch_shape,
+        stride_shape,
+        **kwargs,
+    ):
+        """
+        :param raw_dataset: ndarray of raw data
+        :param label_dataset: ndarray of ground truth labels
+        :param weight_dataset: ndarray of weights for the labels
+        :param patch_shape: the shape of the patch DxHxW
+        :param stride_shape: the shape of the stride DxHxW
+        :param kwargs: additional metadata
+        """
+
+        patch_shape = tuple(patch_shape)
+        stride_shape = tuple(stride_shape)
+
+        self._raw_slices = self._build_slices(
+            raw_dataset, patch_shape, stride_shape
+        )
+        if label_dataset is None:
+            self._label_slices = None
+        else:
+            # take the first element in the label_dataset to build slices
+            self._label_slices = self._build_slices(
+                label_dataset, patch_shape, stride_shape
+            )
+            assert len(self._raw_slices) == len(self._label_slices)
+        if weight_dataset is None:
+            self._weight_slices = None
+        else:
+            self._weight_slices = self._build_slices(
+                weight_dataset, patch_shape, stride_shape
+            )
+            assert len(self.raw_slices) == len(self._weight_slices)
+
+    @property
+    def raw_slices(self):
+        return self._raw_slices
+
+    @property
+    def label_slices(self):
+        return self._label_slices
+
+    @property
+    def weight_slices(self):
+        return self._weight_slices
+
+    @staticmethod
+    def _build_slices(dataset, patch_shape, stride_shape):
+        """Iterates over a given n-dim dataset patch-by-patch with a given stride
+        and builds an array of slice positions.
+
+        Returns:
+            list of slices, i.e.
+            [(slice, slice, slice, slice), ...] if len(shape) == 4
+            [(slice, slice, slice), ...] if len(shape) == 3
+        """
+        slices = []
+        if dataset.ndim == 4:
+            in_channels, i_z, i_y, i_x = dataset.shape
+        else:
+            i_z, i_y, i_x = dataset.shape
+
+        k_z, k_y, k_x = patch_shape
+        s_z, s_y, s_x = stride_shape
+        z_steps = SliceBuilder._gen_indices(i_z, k_z, s_z)
+        for z in z_steps:
+            y_steps = SliceBuilder._gen_indices(i_y, k_y, s_y)
+            for y in y_steps:
+                x_steps = SliceBuilder._gen_indices(i_x, k_x, s_x)
+                for x in x_steps:
+                    slice_idx = (
+                        slice(z, z + k_z),
+                        slice(y, y + k_y),
+                        slice(x, x + k_x),
+                    )
+                    if dataset.ndim == 4:
+                        slice_idx = (slice(0, in_channels),) + slice_idx
+                    slices.append(slice_idx)
+        return slices
+
+    @staticmethod
+    def _gen_indices(i, k, s):
+        assert i >= k, "Sample size has to be bigger than the patch size"
+        for j in range(0, i - k + 1, s):
+            yield j
+        if j + k < i:
+            yield i - k
+
+
+class FilterSliceBuilder(SliceBuilder):
+    """
+    Filter patches containing more than `1 - threshold` of ignore_index label
+    """
+
+    def __init__(
+        self,
+        raw_dataset,
+        label_dataset,
+        weight_dataset,
+        patch_shape,
+        stride_shape,
+        ignore_index=(0,),
+        threshold=0.6,
+        slack_acceptance=0.01,
+        **kwargs,
+    ):
+        super().__init__(
+            raw_dataset,
+            label_dataset,
+            weight_dataset,
+            patch_shape,
+            stride_shape,
+            **kwargs,
+        )
+        if label_dataset is None:
+            return
+
+        rand_state = np.random.RandomState(47)
+
+        # load the full image up front to reduce IO
+        slicer = ()
+        for dim_index in range(label_dataset.ndim):
+            slicer += (slice(0, label_dataset.shape[dim_index]),)
+        label_image = np.copy(label_dataset[slicer])
+        for ignore_value in ignore_index:
+            label_image[label_image == ignore_value] == 0
+
+        def ignore_predicate(raw_label_idx):
+            label_idx = raw_label_idx[1]
+            patch = label_image[label_idx]
+            non_ignore_counts = np.count_nonzero(patch != 0)
+            non_ignore_counts = non_ignore_counts / patch.size
+            return (
+                non_ignore_counts > threshold
+                or rand_state.rand() < slack_acceptance
+            )
+
+        zipped_slices = zip(self.raw_slices, self.label_slices)
+        # ignore slices containing too much ignore_index
+        filtered_slices = list(filter(ignore_predicate, zipped_slices))
+        # unzip and save slices
+        raw_slices, label_slices = zip(*filtered_slices)
+        self._raw_slices = list(raw_slices)
+        self._label_slices = list(label_slices)
