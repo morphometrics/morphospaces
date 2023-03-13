@@ -23,7 +23,7 @@ def test_standard_hdf5_dataset(tmp_path):
     ds = StandardHDF5Dataset(
         file_path=dataset_path,
         stage="train",
-        raw_transform=None,
+        transform=None,
         label_transform=None,
         weight_transform=None,
         patch_shape=patch_shape,
@@ -48,7 +48,7 @@ def test_lazy_hdf5_dataset(tmp_path):
     ds = LazyHDF5Dataset(
         file_path=dataset_path,
         stage="train",
-        raw_transform=None,
+        transform=None,
         label_transform=None,
         weight_transform=None,
         patch_shape=patch_shape,
