@@ -67,7 +67,7 @@ class LazyHDF5Dataset(BaseTiledDataset):
         patch_shape: Tuple[int, ...] = (96, 96, 96),
         stride_shape: Tuple[int, ...] = (24, 24, 24),
         patch_filter_ignore_index: Tuple[int, ...] = (0,),
-        patch_threshold: float = 0.6,
+        patch_threshold: float = 0,
         patch_slack_acceptance=0.01,
         mirror_padding=(16, 32, 32),
         raw_internal_path="raw",

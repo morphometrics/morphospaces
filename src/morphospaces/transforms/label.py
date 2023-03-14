@@ -62,5 +62,5 @@ class LabelToBoundaryd:
             # if the original image was 4D, expand dims
             boundary_image = np.expand_dims(boundary_image, axis=0)
 
-        data_item.update({self.label_key, boundary_image})
+        data_item.update({self.label_key: boundary_image})
         return data_item
