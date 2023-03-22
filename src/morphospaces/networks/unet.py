@@ -4,11 +4,13 @@ import pytorch_lightning as pl
 import torch
 from monai.data import decollate_batch
 from monai.inferers import sliding_window_inference
-from monai.losses import DiceFocalLoss
+from monai.losses import DiceCELoss
 from monai.metrics import DiceMetric
 from monai.networks.layers import Norm
 from monai.networks.nets import UNet as MonaiUnet
 from monai.transforms import AsDiscrete, Compose, EnsureType
+
+from morphospaces.logging.image import log_images
 
 
 class SemanticSegmentationUnet(pl.LightningModule):
@@ -52,7 +54,7 @@ class SemanticSegmentationUnet(pl.LightningModule):
         self,
         spatial_dims: int = 3,
         in_channels: int = 1,
-        out_channels: int = 1,
+        out_channels: int = 2,
         channels: Tuple[int, ...] = (16, 32, 64, 128, 256),
         strides: Tuple[int, ...] = (2, 2, 2, 2),
         num_res_units: int = 2,
@@ -79,24 +81,33 @@ class SemanticSegmentationUnet(pl.LightningModule):
             num_res_units=num_res_units,
             norm=Norm.BATCH,
         )
-        self.loss_function = DiceFocalLoss()
+        # self.loss_function = DiceFocalLoss()
+        self.loss_function = DiceCELoss(to_onehot_y=True, softmax=True)
 
         # validation metric
-        self.dice_metric = DiceMetric
+        self.dice_metric = DiceMetric(
+            include_background=False, reduction="mean", get_not_nans=False
+        )
+
+        # final validation function
+        self.final_activation_function = torch.nn.Softmax(dim=1)
 
         # transforms for val metric calculation
         self.post_pred = Compose(
             [
                 EnsureType("tensor", device="cpu"),
-                AsDiscrete(argmax=True, to_onehot=out_channels),
+                AsDiscrete(argmax=True, to_onehot=2),
             ]
         )
         self.post_label = Compose(
             [
                 EnsureType("tensor", device="cpu"),
-                AsDiscrete(to_onehot=out_channels),
+                AsDiscrete(to_onehot=2),
             ]
         )
+
+        # iteration index
+        self.iteration_count = 1
 
     def forward(self, x) -> torch.Tensor:
         """Implementation of the forward pass.
@@ -119,11 +130,25 @@ class SemanticSegmentationUnet(pl.LightningModule):
         """Implementation of one training step.
         See the pytorch-lightning module documentation for details.
         """
-        images, labels = batch["image"], batch["label"]
+        images, labels = batch[self.image_key], batch[self.label_key]
         output = self.forward(images)
         loss = self.loss_function(output, labels)
 
         self.log("training_loss", loss, batch_size=len(images))
+
+        # log the images
+        if (self.iteration_count % 100) == 0:
+            # only log every 100 iterations
+            log_images(
+                input=images,
+                target=labels,
+                prediction=output,
+                iteration_index=self.iteration_count,
+                logger=self.logger.experiment,
+                final_activation_function=self.final_activation_function,
+            )
+
+        self.iteration_count += 1
         return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
@@ -141,4 +166,18 @@ class SemanticSegmentationUnet(pl.LightningModule):
         outputs = [self.post_pred(i) for i in decollate_batch(outputs)]
         labels = [self.post_label(i) for i in decollate_batch(labels)]
         self.dice_metric(y_pred=outputs, y=labels)
+
         return {"val_loss": loss, "val_number": len(outputs)}
+
+    def validation_epoch_end(self, outputs):
+        val_loss, num_items = 0, 0
+        for output in outputs:
+            val_loss += output["val_loss"].sum().item()
+            num_items += output["val_number"]
+        mean_val_dice = self.dice_metric.aggregate().item()
+        self.dice_metric.reset()
+        mean_val_loss = torch.tensor(val_loss / num_items)
+
+        self.log("val_loss", mean_val_loss, batch_size=num_items)
+        self.log("val_metric", mean_val_dice, batch_size=num_items)
+        return {"val_loss": mean_val_loss, "val_metric": mean_val_dice}

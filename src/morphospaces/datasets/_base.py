@@ -1,4 +1,5 @@
 import glob
+import logging
 from typing import Tuple
 
 import dask.array as da
@@ -6,6 +7,8 @@ import numpy as np
 from torch.utils.data import ConcatDataset, Dataset
 
 from morphospaces.datasets.utils import FilterSliceBuilder, SliceBuilder
+
+logger = logging.getLogger("lightning")
 
 
 class BaseTiledDataset(Dataset):
@@ -30,6 +33,7 @@ class BaseTiledDataset(Dataset):
         label_internal_path="label",
         weight_internal_path=None,
     ):
+        logger.info(f"creating dataset: {file_path}")
         assert stage in ["train", "val", "test"]
         if stage in ["train", "val"]:
             mirror_padding = None
@@ -127,7 +131,7 @@ class BaseTiledDataset(Dataset):
         self.weight_slices = slice_builder.weight_slices
 
         self.patch_count = len(self.raw_slices)
-        # logger.info(f'Number of patches: {self.patch_count}')
+        logger.info(f"Number of patches: {self.patch_count}")
 
     @property
     def raw(self):
@@ -220,7 +224,7 @@ class BaseTiledDataset(Dataset):
             label
         ), "Raw and labels have to be of the same size"
 
-    @staticmethod
+    @classmethod
     def from_glob_pattern(
         cls,
         glob_pattern: str,
