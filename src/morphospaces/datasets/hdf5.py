@@ -18,9 +18,7 @@ class StandardHDF5Dataset(BaseTiledDataset):
         self,
         file_path,
         stage,
-        raw_transform,
-        label_transform,
-        weight_transform=None,
+        transform,
         patch_shape: Tuple[int, ...] = (96, 96, 96),
         stride_shape: Tuple[int, ...] = (24, 24, 24),
         patch_filter_ignore_index: Tuple[int, ...] = (0,),
@@ -34,7 +32,7 @@ class StandardHDF5Dataset(BaseTiledDataset):
         super().__init__(
             file_path=file_path,
             stage=stage,
-            transform=raw_transform,
+            transform=transform,
             patch_shape=patch_shape,
             stride_shape=stride_shape,
             patch_filter_ignore_index=patch_filter_ignore_index,
@@ -65,13 +63,11 @@ class LazyHDF5Dataset(BaseTiledDataset):
         self,
         file_path,
         stage,
-        raw_transform,
-        label_transform,
-        weight_transform=None,
+        transform,
         patch_shape: Tuple[int, ...] = (96, 96, 96),
         stride_shape: Tuple[int, ...] = (24, 24, 24),
         patch_filter_ignore_index: Tuple[int, ...] = (0,),
-        patch_threshold: float = 0.6,
+        patch_threshold: float = 0,
         patch_slack_acceptance=0.01,
         mirror_padding=(16, 32, 32),
         raw_internal_path="raw",
@@ -81,7 +77,7 @@ class LazyHDF5Dataset(BaseTiledDataset):
         super().__init__(
             file_path=file_path,
             stage=stage,
-            transform=raw_transform,
+            transform=transform,
             patch_shape=patch_shape,
             stride_shape=stride_shape,
             patch_filter_ignore_index=patch_filter_ignore_index,
@@ -98,11 +94,6 @@ class LazyHDF5Dataset(BaseTiledDataset):
     @staticmethod
     def get_array(file_path, internal_path):
         return LazyHDF5File(file_path, internal_path)
-        # if ds.ndim == 2:
-        #     ds = file_path[internal_path][:]
-        #     # expand dims if 2d
-        #     ds = np.expand_dims(ds, axis=0)
-        # return ds
 
 
 class LazyHDF5File:
