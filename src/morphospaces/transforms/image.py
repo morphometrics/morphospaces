@@ -55,3 +55,31 @@ class ImageAsFloat32:
             data_item.update({key: img_as_float32(image)})
 
         return data_item
+
+
+class MaskFromVectorField:
+    """Make a mask that is true where vector field magnitude is greater than 0.
+
+    The vector field is assumed to be CZYX.
+    The resulting mask has shape (z, y, x).
+
+    Parameters
+    ----------
+    input_key : str
+        The key for the vector field
+    output_key : str
+        The key to save the
+    """
+
+    def __init__(self, input_key: str, output_key: str):
+        self.key = input_key
+        self.output_key = output_key
+
+    def __call__(self, data_item: Dict[str, np.ndarray]):
+        vector_field = data_item[self.key]
+        non_zero_components = vector_field != 0
+
+        mask = np.sum(non_zero_components, axis=0) > 0
+
+        data_item.update({self.output_key: np.expand_dims(mask, axis=0)})
+        return data_item
