@@ -339,10 +339,20 @@ def make_semantic_skeletonization_target(
     end_points: np.ndarray,
     branch_points: np.ndarray,
     point_radius: int,
-) -> np.ndarray:
+    segmentation_image: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    # make the skeleton target
     skeleton_target = binary_dilation(
         skeleton_image, ball(skeleton_dilation_size)
     )
+
+    # make the skeleton one hot encoded target
+    skeleton_semantic_target = np.zeros(skeleton_target.shape, dtype=int)
+    skeleton_background = segmentation_image.astype(bool)
+    skeleton_background[skeleton_target] = False
+    skeleton_semantic_target[skeleton_background] = 1
+    skeleton_semantic_target[skeleton_target] = 2
+
     end_point_target = make_point_mask(
         point_coordinates=branch_points,
         image_shape=skeleton_image.shape,
@@ -354,9 +364,16 @@ def make_semantic_skeletonization_target(
         point_radius=point_radius,
     )
 
-    return np.stack(
-        [skeleton_target, end_point_target, branch_point_target], axis=0
-    )
+    # make the points one hot encoded target
+    points_one_hot = np.zeros(skeleton_target.shape, dtype=int)
+    points_background_mask = segmentation_image.astype(bool)
+    points_background_mask[end_point_target > 0] = False
+    points_background_mask[branch_point_target > 0] = False
+    points_one_hot[points_background_mask] = 1
+    points_one_hot[end_point_target > 0] = 2
+    points_one_hot[branch_point_target > 0] = 3
+
+    return skeleton_semantic_target, points_one_hot
 
 
 def make_single_branch_point_skeleton_dataset(
@@ -367,7 +384,7 @@ def make_single_branch_point_skeleton_dataset(
     segmentation_dilation_size: int,
     image_shape: Tuple[int, int, int],
     skeleton_gaussian_size: float,
-    skeleton_dilation_size: float,
+    skeleton_dilation_size: int,
     point_gaussian_size: float,
     point_radius: int,
 ):
@@ -392,7 +409,7 @@ def make_single_branch_point_skeleton_dataset(
     skeleton_gaussian_size : float
         Size of the kernel for the Gaussian blur on the skeleton
         for the skeletonization target.
-    skeleton_dilation_size: float
+    skeleton_dilation_size: int
         Size of the kernel for the dialation on the skeleton
         for the skeletonization target.
     point_gaussian_size : float
@@ -461,19 +478,20 @@ def make_single_branch_point_skeleton_dataset(
     )
 
     # make the semantic skeletonization_target
-    semantic_skeletonization_target = make_semantic_skeletonization_target(
+    skeleton_semantic, points_semantic = make_semantic_skeletonization_target(
         skeleton_image=skeleton_image,
         end_points=end_points,
         branch_points=branch_point,
         point_radius=point_radius,
         skeleton_dilation_size=skeleton_dilation_size,
+        segmentation_image=segmentation_image,
     )
 
     # write the file
     write_multi_dataset_hdf(
         file_path=file_name,
         compression="gzip",
-        skeleton_image=skeleton_image,
+        skeleton_image=skeleton_image.astype(int),
         segmentation_image=segmentation_image,
         branch_point=np.atleast_2d(branch_point),
         end_points=end_points,
@@ -481,5 +499,8 @@ def make_single_branch_point_skeleton_dataset(
         segmentation_distance_image=segmentation_distance_image,
         background_vector_image=background_vector_image,
         skeletonization_target=skeletonization_target,
-        semantic_skeletonization_target=semantic_skeletonization_target,
+        skeleton_semantic_target=skeleton_semantic,
+        points_semantic_target=points_semantic,
+        skeleton_vectors=vector_image[0:3, ...],
+        point_vectors=vector_image[3::, ...],
     )
