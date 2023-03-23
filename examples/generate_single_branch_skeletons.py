@@ -54,7 +54,7 @@ image_shape = (120, 120, 120)
 
 
 # make the directory
-dataset_folder_name = "single_branch_point_skeleton_datasets_20230322"
+dataset_folder_name = "single_branch_point_skeleton_datasets_20230323"
 folder_path = os.path.join(".", dataset_folder_name)
 if not os.path.isdir(folder_path):
     os.mkdir(folder_path)

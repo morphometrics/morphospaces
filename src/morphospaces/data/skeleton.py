@@ -292,6 +292,73 @@ def make_skeletonization_target(
     return np.stack([skeleton_blur, end_points_blur, branch_points_blur])
 
 
+def make_point_mask(
+    point_coordinates: np.ndarray,
+    image_shape: Tuple[int, int, int],
+    point_radius: int,
+) -> np.ndarray:
+    """Make a mask image a set of 3D points.
+
+    Parameters
+    ----------
+    point_coordinates : np.ndarray
+        The coordinates of the points as a [N, D] array.
+    image_shape : Tuple[int, int, int]
+        The shape of the image to embed the points in.
+    point_radius : int
+        The radius of the sphere to mask.
+
+    Returns
+    -------
+    image : np.ndarray
+        The one hot encoded points image.
+    """
+    # get just the points inside the image
+    point_coordinates = select_points_in_bounding_box(
+        points=np.atleast_2d(point_coordinates),
+        lower_left_corner=np.array([0, 0, 0]),
+        upper_right_corner=np.asarray(image_shape),
+    )
+
+    # make the image
+    image = np.zeros(image_shape)
+    for point in point_coordinates:
+        point_indices = find_indices_within_radius(
+            array_shape=image_shape, center_point=point, radius=point_radius
+        )
+        image[
+            point_indices[:, 0], point_indices[:, 1], point_indices[:, 2]
+        ] = 1
+
+    return image
+
+
+def make_semantic_skeletonization_target(
+    skeleton_image: np.ndarray,
+    skeleton_dilation_size: int,
+    end_points: np.ndarray,
+    branch_points: np.ndarray,
+    point_radius: int,
+) -> np.ndarray:
+    skeleton_target = binary_dilation(
+        skeleton_image, ball(skeleton_dilation_size)
+    )
+    end_point_target = make_point_mask(
+        point_coordinates=branch_points,
+        image_shape=skeleton_image.shape,
+        point_radius=point_radius,
+    )
+    branch_point_target = make_point_mask(
+        point_coordinates=end_points,
+        image_shape=skeleton_image.shape,
+        point_radius=point_radius,
+    )
+
+    return np.stack(
+        [skeleton_target, end_point_target, branch_point_target], axis=0
+    )
+
+
 def make_single_branch_point_skeleton_dataset(
     file_name: str,
     root_point: np.ndarray,
@@ -302,6 +369,7 @@ def make_single_branch_point_skeleton_dataset(
     skeleton_gaussian_size: float,
     skeleton_dilation_size: float,
     point_gaussian_size: float,
+    point_radius: int,
 ):
     """Write an hdf5 dataset containing a single branch point skeleton
     and auxillary images.
@@ -330,6 +398,8 @@ def make_single_branch_point_skeleton_dataset(
     point_gaussian_size : float
         Size of the kernel for the Gaussian blur on the points
         for the skeletonization target.
+    point_radius : int
+        The radius of the sphere to mask in the semantic target.
     """
     skeleton_image = make_single_branch_point_skeleton(
         root_point=root_point,
@@ -390,6 +460,15 @@ def make_single_branch_point_skeleton_dataset(
         point_gaussian_size=point_gaussian_size,
     )
 
+    # make the semantic skeletonization_target
+    semantic_skeletonization_target = make_semantic_skeletonization_target(
+        skeleton_image=skeleton_image,
+        end_points=end_points,
+        branch_points=branch_point,
+        point_radius=point_radius,
+        skeleton_dilation_size=skeleton_dilation_size,
+    )
+
     # write the file
     write_multi_dataset_hdf(
         file_path=file_name,
@@ -402,4 +481,5 @@ def make_single_branch_point_skeleton_dataset(
         segmentation_distance_image=segmentation_distance_image,
         background_vector_image=background_vector_image,
         skeletonization_target=skeletonization_target,
+        semantic_skeletonization_target=semantic_skeletonization_target,
     )
