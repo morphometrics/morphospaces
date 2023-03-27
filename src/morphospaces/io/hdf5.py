@@ -2,6 +2,7 @@ from typing import Any, Dict
 
 import h5py
 import numpy as np
+import torch
 
 
 def _write_dataset_from_array(
@@ -68,6 +69,13 @@ def write_multi_dataset_hdf(
                     file_handle=f,
                     dataset_name=k,
                     dataset_array=v,
+                    compression=compression,
+                )
+            elif isinstance(v, torch.Tensor):
+                _write_dataset_from_array(
+                    file_handle=f,
+                    dataset_name=k,
+                    dataset_array=v.cpu().numpy(),
                     compression=compression,
                 )
             else:

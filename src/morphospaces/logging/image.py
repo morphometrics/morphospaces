@@ -10,10 +10,14 @@ def log_images(
     logger,
     final_activation_function=None,
     prefix="",
+    mask=None,
 ):
 
     if final_activation_function is not None:
         prediction = final_activation_function(prediction)
+
+    if mask is not None:
+        mask = mask.cpu().numpy()
 
     inputs_map = {
         "inputs": input,
@@ -22,20 +26,16 @@ def log_images(
     }
     img_sources = {}
     for name, batch in inputs_map.items():
-        if isinstance(batch, list) or isinstance(batch, tuple):
-            for i, b in enumerate(batch):
-                img_sources[f"{name}{i}"] = b.data.cpu().numpy()
-        else:
-            img_sources[name] = batch.data.cpu().numpy()
+        img_sources[name] = batch.data.cpu().numpy()
 
     for name, batch in img_sources.items():
-        for tag, image in create_tensorboard_tagged_image(name, batch):
+        for tag, image in create_tensorboard_tagged_image(name, batch, mask):
             logger.add_image(
                 prefix + tag, np.expand_dims(image, axis=0), iteration_index
             )
 
 
-def create_tensorboard_tagged_image(data_name, batch):
+def create_tensorboard_tagged_image(data_name, batch, mask=None):
 
     tag_template = "{}/batch_{}/channel_{}/slice_{}"
 
@@ -52,6 +52,10 @@ def create_tensorboard_tagged_image(data_name, batch):
                 img = img_as_float(
                     batch[batch_idx, channel_idx, slice_idx, ...]
                 )
+                if mask is not None:
+                    mask_slice = mask[batch_idx, 0, slice_idx, ...]
+                    img[np.logical_not(mask_slice)] = 0
+
                 tagged_images.append((tag, normalize_image(img)))
     else:
         # batch has no channel dim: NDHW
