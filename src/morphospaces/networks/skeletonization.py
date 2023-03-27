@@ -244,24 +244,28 @@ class SemanticSkeletonNet(pl.LightningModule):
             images
         )
 
+        assert skeleton_vectors.isnan().sum() == 0
+        assert skeleton_predictions.isnan().sum() == 0
+
         # compute the loss for the intermediate vector prediction
         vector_loss = self.vector_loss_function(
             skeleton_vectors, skeleton_vectors_target, mask=mask
         )
 
         # compute the loss for the semantic skeleton prediction
+        # skeleton_target is NCZYX, must make it NZYX
         skeleton_loss = self.skeleton_loss_function(
-            skeleton_predictions, skeleton_target[:, 0, ...]
+            skeleton_predictions, skeleton_target[:, 0, ...].long()
         )
 
-        # summ the losses
+        # sum the losses
         # total_loss = vector_loss + skeleton_loss
         total_loss = vector_loss + skeleton_loss
 
         self.log("training_loss", total_loss, batch_size=len(images))
 
         # log the images
-        if (self.iteration_count % 1) == 0:
+        if (self.iteration_count % 100) == 0:
             # only log every 100 iterations
             log_images(
                 input=images,
@@ -297,8 +301,9 @@ class SemanticSkeletonNet(pl.LightningModule):
         _, skeleton_predictions = self._model.training_forward(images)
 
         # compute the loss
+        # skeleton_target is NCZYX, must make it NZYX
         loss = self.skeleton_loss_function(
-            skeleton_predictions, skeleton_target[:, 0, ...]
+            skeleton_predictions, skeleton_target[:, 0, ...].long()
         )
 
         # compute the metric

@@ -73,7 +73,7 @@ def compute_skeleton_vector_field(
     skeleton_image : np.ndarray
         The image containing the skeleton. Skeleton should
         be a single value greater than zero.
-    segmentation_iamge : np.ndarray
+    segmentation_image : np.ndarray
         The segmentation corresponding to the skeleton.
 
     Returns
@@ -354,12 +354,12 @@ def make_semantic_skeletonization_target(
     skeleton_semantic_target[skeleton_target] = 2
 
     end_point_target = make_point_mask(
-        point_coordinates=branch_points,
+        point_coordinates=end_points,
         image_shape=skeleton_image.shape,
         point_radius=point_radius,
     )
     branch_point_target = make_point_mask(
-        point_coordinates=end_points,
+        point_coordinates=branch_points,
         image_shape=skeleton_image.shape,
         point_radius=point_radius,
     )

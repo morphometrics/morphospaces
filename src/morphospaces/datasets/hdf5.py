@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Tuple
 
 import dask.array as da
@@ -124,22 +125,31 @@ class LazyHDF5File:
 
     def to_array(self) -> da.Array:
         # make the dask array
-        h5py_dataset = h5py.File(self.path, "r")[self.internal_path]
-        lazy_array = da.from_array(h5py_dataset, chunks=h5py_dataset.chunks)
+        # h5py_file = h5py.File(self.path, "r")
 
-        # add padding if necessary
-        if self.mirror_padding is not None:
-            z, y, x = self.mirror_padding
-            pad_width = ((z, z), (y, y), (x, x))
+        with h5py.File(self.path, "r") as f:
+            data = f[self.internal_path][:]
 
-            if lazy_array.ndim == 4:
-                channels = [
-                    da.pad(r, pad_width=pad_width, mode="reflect")
-                    for r in lazy_array
-                ]
-                lazy_array = da.stack(channels)
-            else:
-                lazy_array = da.pad(
-                    lazy_array, pad_width=pad_width, mode="reflect"
-                )
-        return lazy_array
+        # https://github.com/pytorch/pytorch/issues/11201
+        data_copy = deepcopy(data)
+        del data
+        return data_copy
+        # lazy_array = da.from_array(h5py_dataset, chunks=h5py_dataset.chunks)
+        #
+        # # add padding if necessary
+        # if self.mirror_padding is not None:
+        #     z, y, x = self.mirror_padding
+        #     pad_width = ((z, z), (y, y), (x, x))
+        #
+        #     if lazy_array.ndim == 4:
+        #         channels = [
+        #             da.pad(r, pad_width=pad_width, mode="reflect")
+        #             for r in lazy_array
+        #         ]
+        #         lazy_array = da.stack(channels)
+        #     else:
+        #         lazy_array = da.pad(
+        #             lazy_array, pad_width=pad_width, mode="reflect"
+        #         )
+        # # h5py_file.close()
+        # return lazy_array
