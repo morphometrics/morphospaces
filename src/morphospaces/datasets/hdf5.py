@@ -121,7 +121,11 @@ class LazyHDF5File:
         if arg == Ellipsis:
             return LazyHDF5File(self.path, self.internal_path)
 
-        return self.to_array()[arg]
+        with h5py.File(self.path, "r") as f:
+            data = f[self.internal_path][arg]
+        data_copy = deepcopy(data)
+        del data
+        return data_copy
 
     def to_array(self) -> da.Array:
         # make the dask array

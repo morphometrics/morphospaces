@@ -85,6 +85,7 @@ class SkeletonizationNet(pl.LightningModule):
         )
 
         self.log("training_loss", loss, batch_size=len(images))
+        self.log("lr", self.learning_rate, batch_size=len(images))
 
         # log the images
         if (self.iteration_count % 100) == 0:

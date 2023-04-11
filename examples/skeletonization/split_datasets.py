@@ -13,10 +13,18 @@ def copy_files(file_list, output_directory):
         shutil.copy2(file, output_directory)
 
 
-all_datasets = glob.glob(
-    "../single_branch_point_skeleton_datasets_20230322/*.h5"
+bumpy_datasets = glob.glob("../randomized_bumpy_20230325/*.h5")
+train_bumpy, val_bumpy = train_test_split(
+    bumpy_datasets, test_size=0.1, random_state=0
 )
-train, val = train_test_split(all_datasets, test_size=0.1, random_state=0)
 
-copy_files(train, "./train")
-copy_files(val, "./val")
+copy_files(train_bumpy, "./train_bumpy")
+copy_files(val_bumpy, "./val_bumpy")
+
+short_datasets = glob.glob("../randomized_short_20230326/*.h5")
+train_short, val_short = train_test_split(
+    short_datasets, test_size=0.1, random_state=0
+)
+
+copy_files(train_short, "./train_bumpy")
+copy_files(val_short, "./val_bumpy")

@@ -35,7 +35,7 @@ if __name__ == "__main__":
     )
 
     train_ds = StandardHDF5Dataset.from_glob_pattern(
-        glob_pattern="./test/*.h5",
+        glob_pattern="./train/*.h5",
         stage="train",
         transform=train_transform,
         patch_shape=patch_shape,
@@ -44,7 +44,7 @@ if __name__ == "__main__":
         patch_threshold=patch_threshold,
         patch_slack_acceptance=0.01,
         mirror_padding=(16, 32, 32),
-        raw_internal_path="background_vector_image",
+        raw_internal_path="normalized_vector_background_image",
         label_internal_path="skeleton_vectors",
         weight_internal_path="skeleton_semantic_target",
     )
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     )
 
     val_ds = StandardHDF5Dataset.from_glob_pattern(
-        glob_pattern="./test/*.h5",
+        glob_pattern="./val/*.h5",
         stage="val",
         transform=val_transform,
         patch_shape=patch_shape,
@@ -74,7 +74,7 @@ if __name__ == "__main__":
         patch_threshold=patch_threshold,
         patch_slack_acceptance=0.005,
         mirror_padding=(16, 32, 32),
-        raw_internal_path="background_vector_image",
+        raw_internal_path="normalized_vector_background_image",
         label_internal_path="skeleton_vectors",
         weight_internal_path="skeleton_semantic_target",
     )
