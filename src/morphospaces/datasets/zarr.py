@@ -54,8 +54,13 @@ class LazyZarrFile:
         self.internal_path = internal_path
         if self.internal_path:
             array = self.to_array()
-            self.ndim = array.ndim
-            self.shape = array.shape
+            try:
+                self.ndim = array.ndim
+                self.shape = array.shape
+            except AttributeError:
+                print(path)
+            except KeyError:
+                print(path)
 
     def to_array(self) -> zarr.core.Array:
         # return da.from_zarr(self.path, self.internal_path)
