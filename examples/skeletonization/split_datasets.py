@@ -12,7 +12,6 @@ def copy_files(file_list, output_directory):
     for file in tqdm(file_list):
         shutil.copy2(file, output_directory)
 
-
 bumpy_datasets = glob.glob("../randomized_bumpy_20230325/*.h5")
 train_bumpy, val_bumpy = train_test_split(
     bumpy_datasets, test_size=0.1, random_state=0

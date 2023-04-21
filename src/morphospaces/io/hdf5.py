@@ -91,6 +91,13 @@ def write_multi_dataset_hdf(
                     compression=compression,
                     chunks=chunks,
                 )
+            elif isinstance(v, torch.Tensor):
+                _write_dataset_from_array(
+                    file_handle=f,
+                    dataset_name=k,
+                    dataset_array=v.cpu().numpy(),
+                    compression=compression,
+                )
             else:
                 _write_dataset_from_dict(
                     file_handle=f,
