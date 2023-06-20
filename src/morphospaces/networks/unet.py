@@ -93,16 +93,17 @@ class SemanticSegmentationUnet(pl.LightningModule):
         self.final_activation_function = torch.nn.Softmax(dim=1)
 
         # transforms for val metric calculation
+        n_one_hot_classes = max(out_channels, 2)
         self.post_pred = Compose(
             [
                 EnsureType("tensor", device="cpu"),
-                AsDiscrete(argmax=True, to_onehot=2),
+                AsDiscrete(argmax=True, to_onehot=n_one_hot_classes),
             ]
         )
         self.post_label = Compose(
             [
                 EnsureType("tensor", device="cpu"),
-                AsDiscrete(to_onehot=2),
+                AsDiscrete(to_onehot=n_one_hot_classes),
             ]
         )
 
