@@ -111,7 +111,7 @@ class FilterSliceBuilder(SliceBuilder):
             slicer += (slice(0, dataset.shape[dim_index]),)
         label_image = np.copy(dataset[slicer])
         for ignore_value in filter_ignore_index:
-            label_image[label_image == ignore_value] == 0
+            label_image[label_image == ignore_value] = 0
 
         def ignore_predicate(slice_to_filter):
             patch = label_image[slice_to_filter]
