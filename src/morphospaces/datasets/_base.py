@@ -1,6 +1,6 @@
 import glob
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import dask.array as da
 import numpy as np
@@ -27,8 +27,14 @@ class BaseTiledDataset(Dataset):
         self,
         file_path: str,
         dataset_keys: List[str],
-        patch_shape: Tuple[int, ...] = (96, 96, 96),
-        stride_shape: Tuple[int, ...] = (24, 24, 24),
+        patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (
+            96,
+            96,
+            96,
+        ),
+        stride_shape: Union[
+            Tuple[int, int, int], Tuple[int, int, int, int]
+        ] = (24, 24, 24),
         patch_filter_index: Tuple[int, ...] = (0,),
         patch_filter_key: str = "label",
         patch_threshold: float = 0.6,
@@ -37,10 +43,11 @@ class BaseTiledDataset(Dataset):
         logger.info(f"creating dataset: {file_path}")
         self.file_path = file_path
 
-        # load the data
+        # load the data (will be lazy if get_array() returns lazy object)
         assert len(dataset_keys) > 0, "dataset_keys must be a non-empty list"
-        self.data: Dict[str, ArrayLike] = {}
-        self._load_data(dataset_keys)
+        self.data: Dict[str, ArrayLike] = {
+            key: self.get_array(self.file_path, key) for key in dataset_keys
+        }
 
         # make the slices
         assert (
@@ -50,7 +57,7 @@ class BaseTiledDataset(Dataset):
             data=self.data,
             patch_shape=patch_shape,
             stride_shape=stride_shape,
-            patch_filter_index=patch_filter_index,
+            patch_filter_ignore_index=patch_filter_index,
             patch_filter_key=patch_filter_key,
             patch_threshold=patch_threshold,
             patch_slack_acceptance=patch_slack_acceptance,
@@ -59,10 +66,6 @@ class BaseTiledDataset(Dataset):
     @property
     def patch_count(self) -> int:
         return len(self.patches)
-
-    def _load_data(self, dataset_keys: List[str]) -> None:
-        for key in dataset_keys:
-            self.data[key] = self.get_array(self.file_path, key)
 
     @staticmethod
     def get_array(file_path: str, internal_path: str) -> ArrayLike:
@@ -175,7 +178,7 @@ class BaseTiledDataset2(Dataset):
                 self.weight_map,
                 patch_shape,
                 stride_shape,
-                ignore_index=patch_filter_ignore_index,
+                filter_ignore_index=patch_filter_ignore_index,
                 threshold=patch_threshold,
                 slack_acceptance=patch_slack_acceptance,
             )

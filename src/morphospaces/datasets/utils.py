@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -12,12 +12,9 @@ class SliceBuilder:
 
     def __init__(
         self,
-        raw_dataset,
-        label_dataset,
-        weight_dataset,
-        patch_shape,
-        stride_shape,
-        **kwargs,
+        dataset: ArrayLike,
+        patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]],
+        stride_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]],
     ):
         """
         :param raw_dataset: ndarray of raw data
@@ -31,39 +28,20 @@ class SliceBuilder:
         patch_shape = tuple(patch_shape)
         stride_shape = tuple(stride_shape)
 
-        self._raw_slices = self._build_slices(
-            raw_dataset, patch_shape, stride_shape
+        self._slices = self._build_slices(
+            dataset=dataset, patch_shape=patch_shape, stride_shape=stride_shape
         )
-        if label_dataset is None:
-            self._label_slices = None
-        else:
-            # take the first element in the label_dataset to build slices
-            self._label_slices = self._build_slices(
-                label_dataset, patch_shape, stride_shape
-            )
-            assert len(self._raw_slices) == len(self._label_slices)
-        if weight_dataset is None:
-            self._weight_slices = None
-        else:
-            self._weight_slices = self._build_slices(
-                weight_dataset, patch_shape, stride_shape
-            )
-            assert len(self.raw_slices) == len(self._weight_slices)
 
     @property
-    def raw_slices(self):
-        return self._raw_slices
-
-    @property
-    def label_slices(self):
-        return self._label_slices
-
-    @property
-    def weight_slices(self):
-        return self._weight_slices
+    def slices(self):
+        return self._slices
 
     @staticmethod
-    def _build_slices(dataset, patch_shape, stride_shape):
+    def _build_slices(
+        dataset: Dict[str, ArrayLike],
+        patch_shape: Tuple[int, ...],
+        stride_shape: Tuple[int, ...],
+    ):
         """Iterates over a given n-dim dataset patch-by-patch with a given stride
         and builds an array of slice positions.
 
@@ -112,40 +90,31 @@ class FilterSliceBuilder(SliceBuilder):
 
     def __init__(
         self,
-        raw_dataset,
-        label_dataset,
-        weight_dataset,
-        patch_shape,
-        stride_shape,
-        ignore_index=(0,),
-        threshold=0.6,
-        slack_acceptance=0.01,
-        **kwargs,
+        dataset: ArrayLike,
+        patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]],
+        stride_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]],
+        filter_ignore_index: Tuple[int, ...] = (0,),
+        threshold: float = 0.6,
+        slack_acceptance: float = 0.01,
     ):
         super().__init__(
-            raw_dataset,
-            label_dataset,
-            weight_dataset,
+            dataset,
             patch_shape,
             stride_shape,
-            **kwargs,
         )
-        if label_dataset is None:
-            return
 
         rand_state = np.random.RandomState(47)
 
         # load the full image up front to reduce IO
         slicer = ()
-        for dim_index in range(label_dataset.ndim):
-            slicer += (slice(0, label_dataset.shape[dim_index]),)
-        label_image = np.copy(label_dataset[slicer])
-        for ignore_value in ignore_index:
+        for dim_index in range(dataset.ndim):
+            slicer += (slice(0, dataset.shape[dim_index]),)
+        label_image = np.copy(dataset[slicer])
+        for ignore_value in filter_ignore_index:
             label_image[label_image == ignore_value] == 0
 
-        def ignore_predicate(raw_label_idx):
-            label_idx = raw_label_idx[1]
-            patch = label_image[label_idx]
+        def ignore_predicate(slice_to_filter):
+            patch = label_image[slice_to_filter]
             non_ignore_counts = np.count_nonzero(patch != 0)
             non_ignore_counts = non_ignore_counts / patch.size
             return (
@@ -153,22 +122,24 @@ class FilterSliceBuilder(SliceBuilder):
                 or rand_state.rand() < slack_acceptance
             )
 
-        zipped_slices = zip(self.raw_slices, self.label_slices)
-        # ignore slices containing too much ignore_index
-        filtered_slices = list(filter(ignore_predicate, zipped_slices))
-        # unzip and save slices
-        raw_slices, label_slices = zip(*filtered_slices)
-        self._raw_slices = list(raw_slices)
-        self._label_slices = list(label_slices)
+        # filter slices with less than the requested volume fraction
+        # of non-ignore_index
+        self._slices = list(filter(ignore_predicate, self.slices))
 
 
 class PatchManager:
     def __init__(
         self,
-        data: ArrayLike,
-        patch_shape: Tuple[int, ...] = (96, 96, 96),
-        stride_shape: Tuple[int, ...] = (24, 24, 24),
-        patch_filter_index: Tuple[int, ...] = (0,),
+        data: Dict[str, ArrayLike],
+        patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (
+            96,
+            96,
+            96,
+        ),
+        stride_shape: Union[
+            Tuple[int, int, int], Tuple[int, int, int, int]
+        ] = (24, 24, 24),
+        patch_filter_ignore_index: Tuple[int, ...] = (0,),
         patch_filter_key: str = "label",
         patch_threshold: float = 0.6,
         patch_slack_acceptance=0.01,
@@ -176,35 +147,33 @@ class PatchManager:
 
         self._shape = patch_shape
         self._stride = stride_shape
-        self._filter_index = patch_filter_index
+        self._filter_ignore_index = patch_filter_ignore_index
         self._filter_key = patch_filter_key
         self._threshold = patch_threshold
         self._slack_acceptance = patch_slack_acceptance
 
         self._slices = self._compute_slices(data)
 
-    def _compute_slices(self, data: ArrayLike):
+    def _compute_slices(
+        self, data: Dict[str, ArrayLike]
+    ) -> List[Tuple[slice, ...]]:
         if self.threshold > 0:
+            dataset = data[self.filter_key]
             slice_builder = FilterSliceBuilder(
-                self.raw,
-                self.label,
-                self.weight_map,
-                self.shape,
-                self.stride,
-                filter_index=self.filter_index,
+                dataset=dataset,
+                patch_shape=self.shape,
+                stride_shape=self.stride,
+                filter_ignore_index=self.filter_ignore_index,
                 threshold=self.threshold,
                 slack_acceptance=self.slack_acceptance,
             )
         elif self.threshold == 0:
+            # take the first data array in the dict
+            dataset = next(iter(data.values()))
             slice_builder = SliceBuilder(
-                self.raw,
-                self.label,
-                self.weight_map,
+                dataset,
                 self.shape,
                 self.stride,
-                filter_index=self.filter_index,
-                threshold=self.threshold,
-                slack_acceptance=self.slack_acceptance,
             )
         else:
             raise ValueError(
@@ -215,29 +184,32 @@ class PatchManager:
         return slice_builder.slices
 
     @property
-    def shape(self):
+    def shape(self) -> Union[Tuple[int, int, int], Tuple[int, int, int, int]]:
         return self._shape
 
     @property
-    def stride(self):
+    def stride(self) -> Union[Tuple[int, int, int], Tuple[int, int, int, int]]:
         return self._stride
 
     @property
-    def filter_index(self):
-        return self._filter_index
+    def filter_ignore_index(self) -> Tuple[int, ...]:
+        return self._filter_ignore_index
 
     @property
-    def filter_key(self):
+    def filter_key(self) -> str:
         return self._filter_key
 
     @property
-    def threshold(self):
+    def threshold(self) -> float:
         return self._threshold
 
     @property
-    def slack_acceptance(self):
+    def slack_acceptance(self) -> float:
         return self._slack_acceptance
 
     @property
-    def slices(self):
+    def slices(self) -> List[Tuple[slice, ...]]:
         return self._slices
+
+    def __len__(self) -> int:
+        return len(self.slices)
