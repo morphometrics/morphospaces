@@ -13,6 +13,7 @@ def make_test_array() -> np.ndarray:
 
 
 def test_slice_builder():
+    """Test SliceBuilder without filtering"""
     patch_shape = (10, 10, 10)
     stride = (10, 10, 10)
 
@@ -39,7 +40,7 @@ def test_slice_builder():
 
 
 def test_filter_slice_builder_no_ignore_index():
-
+    """Test that the FilterSliceBuilder uses the threshold correctly."""
     patch_shape = (10, 10, 10)
     stride = (10, 10, 10)
     threshold = 0.5
@@ -70,7 +71,7 @@ def test_filter_slice_builder_no_ignore_index():
 
 
 def test_filter_slice_builder_ignore_index():
-
+    """Test that the FilterSliceBuilder properly ignores indices."""
     patch_shape = (10, 10, 10)
     stride = (10, 10, 10)
     threshold = 0.5
