@@ -1,17 +1,87 @@
 import glob
 import logging
-from typing import Tuple
+from typing import Dict, List, Tuple
 
 import dask.array as da
 import numpy as np
+from numpy.typing import ArrayLike
 from torch.utils.data import ConcatDataset, Dataset
 
-from morphospaces.datasets.utils import FilterSliceBuilder, SliceBuilder
+from morphospaces.datasets.utils import (
+    FilterSliceBuilder,
+    PatchManager,
+    SliceBuilder,
+)
 
 logger = logging.getLogger("lightning")
 
 
 class BaseTiledDataset(Dataset):
+    """
+    Implementation of torch.utils.data.Dataset,
+    which iterates over the raw and label datasets
+    patch by patch with a given stride.
+    """
+
+    def __init__(
+        self,
+        file_path: str,
+        dataset_keys: List[str],
+        patch_shape: Tuple[int, ...] = (96, 96, 96),
+        stride_shape: Tuple[int, ...] = (24, 24, 24),
+        patch_filter_index: Tuple[int, ...] = (0,),
+        patch_filter_key: str = "label",
+        patch_threshold: float = 0.6,
+        patch_slack_acceptance=0.01,
+    ):
+        logger.info(f"creating dataset: {file_path}")
+        self.file_path = file_path
+
+        # load the data
+        assert len(dataset_keys) > 0, "dataset_keys must be a non-empty list"
+        self.data: Dict[str, ArrayLike] = {}
+        self._load_data(dataset_keys)
+
+        # make the slices
+        assert (
+            patch_filter_key in self.data
+        ), "patch_filter_key must be a dataset key"
+        self.patches = PatchManager(
+            data=self.data,
+            patch_shape=patch_shape,
+            stride_shape=stride_shape,
+            patch_filter_index=patch_filter_index,
+            patch_filter_key=patch_filter_key,
+            patch_threshold=patch_threshold,
+            patch_slack_acceptance=patch_slack_acceptance,
+        )
+
+    @property
+    def patch_count(self) -> int:
+        return len(self.patches)
+
+    def _load_data(self, dataset_keys: List[str]) -> None:
+        for key in dataset_keys:
+            self.data[key] = self.get_array(self.file_path, key)
+
+    @staticmethod
+    def get_array(file_path: str, internal_path: str) -> ArrayLike:
+        raise NotImplementedError
+
+    def __getitem__(self, idx: int) -> Dict[str, ArrayLike]:
+        if idx >= len(self):
+            raise StopIteration
+
+        # get the slice for a given index 'idx'
+        slice_indices = self.patches.slices[idx]
+
+        return {key: array[slice_indices] for key, array in self.data.items()}
+
+    def __len__(self) -> int:
+        return self.patch_count
+
+
+class BaseTiledDataset2(Dataset):
     """
     Implementation of torch.utils.data.Dataset,
      which iterates over the raw and label datasets

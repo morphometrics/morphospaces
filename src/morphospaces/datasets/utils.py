@@ -1,4 +1,7 @@
+from typing import Tuple
+
 import numpy as np
+from numpy.typing import ArrayLike
 
 
 class SliceBuilder:
@@ -157,3 +160,84 @@ class FilterSliceBuilder(SliceBuilder):
         raw_slices, label_slices = zip(*filtered_slices)
         self._raw_slices = list(raw_slices)
         self._label_slices = list(label_slices)
+
+
+class PatchManager:
+    def __init__(
+        self,
+        data: ArrayLike,
+        patch_shape: Tuple[int, ...] = (96, 96, 96),
+        stride_shape: Tuple[int, ...] = (24, 24, 24),
+        patch_filter_index: Tuple[int, ...] = (0,),
+        patch_filter_key: str = "label",
+        patch_threshold: float = 0.6,
+        patch_slack_acceptance=0.01,
+    ):
+
+        self._shape = patch_shape
+        self._stride = stride_shape
+        self._filter_index = patch_filter_index
+        self._filter_key = patch_filter_key
+        self._threshold = patch_threshold
+        self._slack_acceptance = patch_slack_acceptance
+
+        self._slices = self._compute_slices(data)
+
+    def _compute_slices(self, data: ArrayLike):
+        if self.threshold > 0:
+            slice_builder = FilterSliceBuilder(
+                self.raw,
+                self.label,
+                self.weight_map,
+                self.shape,
+                self.stride,
+                filter_index=self.filter_index,
+                threshold=self.threshold,
+                slack_acceptance=self.slack_acceptance,
+            )
+        elif self.threshold == 0:
+            slice_builder = SliceBuilder(
+                self.raw,
+                self.label,
+                self.weight_map,
+                self.shape,
+                self.stride,
+                filter_index=self.filter_index,
+                threshold=self.threshold,
+                slack_acceptance=self.slack_acceptance,
+            )
+        else:
+            raise ValueError(
+                "patch_threshold must be >= 0, "
+                f"patch_threshold was {self.threshold}"
+            )
+
+        return slice_builder.slices
+
+    @property
+    def shape(self):
+        return self._shape
+
+    @property
+    def stride(self):
+        return self._stride
+
+    @property
+    def filter_index(self):
+        return self._filter_index
+
+    @property
+    def filter_key(self):
+        return self._filter_key
+
+    @property
+    def threshold(self):
+        return self._threshold
+
+    @property
+    def slack_acceptance(self):
+        return self._slack_acceptance
+
+    @property
+    def slices(self):
+        return self._slices
