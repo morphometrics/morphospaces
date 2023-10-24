@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Tuple
+from typing import List, Tuple, Union
 
 import dask.array as da
 import h5py
@@ -17,32 +17,32 @@ class StandardHDF5Dataset(BaseTiledDataset):
 
     def __init__(
         self,
-        file_path,
-        stage,
-        transform,
-        patch_shape: Tuple[int, ...] = (96, 96, 96),
-        stride_shape: Tuple[int, ...] = (24, 24, 24),
+        file_path: str,
+        dataset_keys: List[str],
+        transform=None,
+        patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (
+            96,
+            96,
+            96,
+        ),
+        stride_shape: Union[
+            Tuple[int, int, int], Tuple[int, int, int, int]
+        ] = (24, 24, 24),
         patch_filter_ignore_index: Tuple[int, ...] = (0,),
+        patch_filter_key: str = "label",
         patch_threshold: float = 0.6,
         patch_slack_acceptance=0.01,
-        mirror_padding=(16, 32, 32),
-        raw_internal_path="raw",
-        label_internal_path="label",
-        weight_internal_path=None,
     ):
         super().__init__(
             file_path=file_path,
-            stage=stage,
+            dataset_keys=dataset_keys,
             transform=transform,
             patch_shape=patch_shape,
             stride_shape=stride_shape,
             patch_filter_ignore_index=patch_filter_ignore_index,
+            patch_filter_key=patch_filter_key,
             patch_threshold=patch_threshold,
             patch_slack_acceptance=patch_slack_acceptance,
-            mirror_padding=mirror_padding,
-            raw_internal_path=raw_internal_path,
-            label_internal_path=label_internal_path,
-            weight_internal_path=weight_internal_path,
         )
 
     @staticmethod
@@ -62,32 +62,32 @@ class LazyHDF5Dataset(BaseTiledDataset):
 
     def __init__(
         self,
-        file_path,
-        stage,
-        transform,
-        patch_shape: Tuple[int, ...] = (96, 96, 96),
-        stride_shape: Tuple[int, ...] = (24, 24, 24),
+        file_path: str,
+        dataset_keys: List[str],
+        transform=None,
+        patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (
+            96,
+            96,
+            96,
+        ),
+        stride_shape: Union[
+            Tuple[int, int, int], Tuple[int, int, int, int]
+        ] = (24, 24, 24),
         patch_filter_ignore_index: Tuple[int, ...] = (0,),
-        patch_threshold: float = 0,
+        patch_filter_key: str = "label",
+        patch_threshold: float = 0.6,
         patch_slack_acceptance=0.01,
-        mirror_padding=(16, 32, 32),
-        raw_internal_path="raw",
-        label_internal_path="label",
-        weight_internal_path=None,
     ):
         super().__init__(
             file_path=file_path,
-            stage=stage,
+            dataset_keys=dataset_keys,
             transform=transform,
             patch_shape=patch_shape,
             stride_shape=stride_shape,
             patch_filter_ignore_index=patch_filter_ignore_index,
+            patch_filter_key=patch_filter_key,
             patch_threshold=patch_threshold,
             patch_slack_acceptance=patch_slack_acceptance,
-            mirror_padding=mirror_padding,
-            raw_internal_path=raw_internal_path,
-            label_internal_path=label_internal_path,
-            weight_internal_path=weight_internal_path,
         )
 
         # logger.info("Using modified HDF5Dataset!")
@@ -103,7 +103,7 @@ class LazyHDF5File:
     def __init__(self, path, internal_path=None, mirror_padding=None):
         self.path = path
         self.internal_path = internal_path
-        self.mirror_padding = mirror_padding
+
         if self.internal_path:
             with h5py.File(self.path, "r") as f:
                 self.ndim = f[self.internal_path].ndim
@@ -128,9 +128,6 @@ class LazyHDF5File:
         return data_copy
 
     def to_array(self) -> da.Array:
-        # make the dask array
-        # h5py_file = h5py.File(self.path, "r")
-
         with h5py.File(self.path, "r") as f:
             data = f[self.internal_path][:]
 
@@ -138,22 +135,3 @@ class LazyHDF5File:
         data_copy = deepcopy(data)
         del data
         return data_copy
-        # lazy_array = da.from_array(h5py_dataset, chunks=h5py_dataset.chunks)
-        #
-        # # add padding if necessary
-        # if self.mirror_padding is not None:
-        #     z, y, x = self.mirror_padding
-        #     pad_width = ((z, z), (y, y), (x, x))
-        #
-        #     if lazy_array.ndim == 4:
-        #         channels = [
-        #             da.pad(r, pad_width=pad_width, mode="reflect")
-        #             for r in lazy_array
-        #         ]
-        #         lazy_array = da.stack(channels)
-        #     else:
-        #         lazy_array = da.pad(
-        #             lazy_array, pad_width=pad_width, mode="reflect"
-        #         )
-        # # h5py_file.close()
-        # return lazy_array

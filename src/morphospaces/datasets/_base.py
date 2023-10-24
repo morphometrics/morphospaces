@@ -27,6 +27,7 @@ class BaseTiledDataset(Dataset):
         self,
         file_path: str,
         dataset_keys: List[str],
+        transform=None,
         patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (
             96,
             96,
@@ -35,7 +36,7 @@ class BaseTiledDataset(Dataset):
         stride_shape: Union[
             Tuple[int, int, int], Tuple[int, int, int, int]
         ] = (24, 24, 24),
-        patch_filter_index: Tuple[int, ...] = (0,),
+        patch_filter_ignore_index: Tuple[int, ...] = (0,),
         patch_filter_key: str = "label",
         patch_threshold: float = 0.6,
         patch_slack_acceptance=0.01,
@@ -57,11 +58,14 @@ class BaseTiledDataset(Dataset):
             data=self.data,
             patch_shape=patch_shape,
             stride_shape=stride_shape,
-            patch_filter_ignore_index=patch_filter_index,
+            patch_filter_ignore_index=patch_filter_ignore_index,
             patch_filter_key=patch_filter_key,
             patch_threshold=patch_threshold,
             patch_slack_acceptance=patch_slack_acceptance,
         )
+
+        # store the transformation
+        self.transform = transform
 
     @property
     def patch_count(self) -> int:
@@ -78,10 +82,56 @@ class BaseTiledDataset(Dataset):
         # get the slice for a given index 'idx'
         slice_indices = self.patches.slices[idx]
 
-        return {key: array[slice_indices] for key, array in self.data.items()}
+        # get the data
+        data_patch = {
+            key: array[slice_indices] for key, array in self.data.items()
+        }
+
+        if self.transform is not None:
+            # transform the data
+            data_patch = self.transform(data_patch)
+
+        return data_patch
 
     def __len__(self) -> int:
         return self.patch_count
+
+    @classmethod
+    def from_glob_pattern(
+        cls,
+        glob_pattern: str,
+        dataset_keys: List[str],
+        transform=None,
+        patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (
+            96,
+            96,
+            96,
+        ),
+        stride_shape: Union[
+            Tuple[int, int, int], Tuple[int, int, int, int]
+        ] = (24, 24, 24),
+        patch_filter_ignore_index: Tuple[int, ...] = (0,),
+        patch_filter_key: str = "label",
+        patch_threshold: float = 0.6,
+        patch_slack_acceptance=0.01,
+    ):
+        file_paths = glob.glob(glob_pattern)
+        datasets = [
+            cls(
+                file_path=path,
+                dataset_keys=dataset_keys,
+                transform=transform,
+                patch_shape=patch_shape,
+                stride_shape=stride_shape,
+                patch_filter_ignore_index=patch_filter_ignore_index,
+                patch_filter_key=patch_filter_key,
+                patch_threshold=patch_threshold,
+                patch_slack_acceptance=patch_slack_acceptance,
+            )
+            for path in file_paths
+        ]
+
+        return ConcatDataset(datasets)
 
 
 class BaseTiledDataset2(Dataset):
