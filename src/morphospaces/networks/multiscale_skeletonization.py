@@ -37,6 +37,7 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
         self.scale_2_loss = MaskedSmoothL1Loss(reduction="mean")
 
         self.iteration_count = 0
+        self.validation_step_outputs = []
 
     def forward(self, x) -> torch.Tensor:
         """Inference forward pass"""
@@ -159,16 +160,18 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
             skeletonization_target_scale_1=skeletonization_target_scale_1,
             skeletonization_target_scale_2=skeletonization_target_scale_2,
         )
+        val_outputs = {"val_loss": loss, "val_number": len(images)}
+        self.validation_step_outputs.append(val_outputs)
+        return val_outputs
 
-        return {"val_loss": loss, "val_number": len(images)}
-
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
         val_loss, num_items = 0, 0
-        for output in outputs:
+        for output in self.validation_step_outputs:
             val_loss += output["val_loss"].sum().item()
             num_items += output["val_number"]
         mean_val_loss = torch.tensor(val_loss / num_items)
         self.log("val_loss", mean_val_loss, batch_size=num_items)
+        self.validation_step_outputs.clear()  # free memory
         return {"val_loss": mean_val_loss}
 
     def _compute_loss(
