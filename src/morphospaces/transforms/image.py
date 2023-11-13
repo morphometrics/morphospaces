@@ -86,6 +86,30 @@ class ImageAsFloat32:
         return data_item
 
 
+class LabelsAsFloat32:
+    """Convert a label image to a float32 array.
+
+    Parameters
+    ----------
+    keys : Union[str, List[str]]
+        The keys in the dataset to apply the transform to.
+    """
+
+    def __init__(self, keys: Union[str, List[str]]):
+        if isinstance(keys, str):
+            keys = [keys]
+        self.keys: List[str] = keys
+
+    def __call__(
+        self, data_item: Dict[str, np.ndarray]
+    ) -> Dict[str, np.ndarray]:
+        for key in self.keys:
+            image = data_item[key]
+            data_item.update({key: np.asarray(image, dtype=np.single)})
+
+        return data_item
+
+
 class MaskFromVectorField:
     """Make a mask that is true where vector field magnitude is greater than 0.
 

@@ -11,7 +11,7 @@ from morphospaces.datasets import LazyHDF5Dataset, StandardHDF5Dataset
 from morphospaces.networks.multiscale_skeletonization import (
     MultiscaleSkeletonizationNet,
 )
-from morphospaces.transforms.image import ExpandDimsd, ImageAsFloat32
+from morphospaces.transforms.image import ExpandDimsd, LabelsAsFloat32
 from morphospaces.transforms.skeleton import DownscaleSkeletonGroundTruth
 
 logger = logging.getLogger("lightning.pytorch")
@@ -32,7 +32,7 @@ if __name__ == "__main__":
 
     train_transform = Compose(
         [
-            ImageAsFloat32(keys="label_image"),
+            LabelsAsFloat32(keys="label_image"),
             RandFlipd(
                 keys=[
                     "normalized_vector_background_image",
@@ -49,24 +49,6 @@ if __name__ == "__main__":
                 ],
                 prob=0.1,
                 spatial_axes=(0, 1),
-            ),
-            RandRotate90d(
-                keys=[
-                    "normalized_vector_background_image",
-                    "skeletonization_target",
-                    "label_image",
-                ],
-                prob=0.1,
-                spatial_axes=(0, 2),
-            ),
-            RandRotate90d(
-                keys=[
-                    "normalized_vector_background_image",
-                    "skeletonization_target",
-                    "label_image",
-                ],
-                prob=0.1,
-                spatial_axes=(1, 2),
             ),
             RandAffined(
                 keys=[
@@ -102,7 +84,7 @@ if __name__ == "__main__":
     )
 
     train_ds = LazyHDF5Dataset.from_glob_pattern(
-        glob_pattern="./test_multiscale/*.h5",
+        glob_pattern="./data/*.h5",
         dataset_keys=[
             "normalized_vector_background_image",
             "label_image",
@@ -122,7 +104,7 @@ if __name__ == "__main__":
 
     val_transform = Compose(
         [
-            ImageAsFloat32(keys="label_image"),
+            LabelsAsFloat32(keys="label_image"),
             DownscaleSkeletonGroundTruth(
                 label_key="label_image",
                 skeletonization_target_key=skeletonization_target,
@@ -145,7 +127,7 @@ if __name__ == "__main__":
     )
 
     val_ds = StandardHDF5Dataset.from_glob_pattern(
-        glob_pattern="./test_multiscale/*.h5",
+        glob_pattern="./data_val/*.h5",
         dataset_keys=[
             "normalized_vector_background_image",
             "label_image",
