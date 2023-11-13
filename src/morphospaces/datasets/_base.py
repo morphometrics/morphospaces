@@ -13,7 +13,7 @@ from morphospaces.datasets.utils import (
     SliceBuilder,
 )
 
-logger = logging.getLogger("lightning")
+logger = logging.getLogger("lightning.pytorch")
 
 
 class BaseTiledDataset(Dataset):
@@ -41,7 +41,6 @@ class BaseTiledDataset(Dataset):
         patch_threshold: float = 0.6,
         patch_slack_acceptance=0.01,
     ):
-        logger.info(f"creating dataset: {file_path}")
         self.file_path = file_path
 
         # load the data (will be lazy if get_array() returns lazy object)
@@ -62,6 +61,10 @@ class BaseTiledDataset(Dataset):
             patch_filter_key=patch_filter_key,
             patch_threshold=patch_threshold,
             patch_slack_acceptance=patch_slack_acceptance,
+        )
+
+        logger.info(
+            f"Loaded: {file_path}\n    Number of patches: {self.patch_count}"
         )
 
         # store the transformation
@@ -116,20 +119,23 @@ class BaseTiledDataset(Dataset):
         patch_slack_acceptance=0.01,
     ):
         file_paths = glob.glob(glob_pattern)
-        datasets = [
-            cls(
-                file_path=path,
-                dataset_keys=dataset_keys,
-                transform=transform,
-                patch_shape=patch_shape,
-                stride_shape=stride_shape,
-                patch_filter_ignore_index=patch_filter_ignore_index,
-                patch_filter_key=patch_filter_key,
-                patch_threshold=patch_threshold,
-                patch_slack_acceptance=patch_slack_acceptance,
-            )
-            for path in file_paths
-        ]
+        datasets = []
+        for path in file_paths:
+            try:
+                dataset = cls(
+                    file_path=path,
+                    dataset_keys=dataset_keys,
+                    transform=transform,
+                    patch_shape=patch_shape,
+                    stride_shape=stride_shape,
+                    patch_filter_ignore_index=patch_filter_ignore_index,
+                    patch_filter_key=patch_filter_key,
+                    patch_threshold=patch_threshold,
+                    patch_slack_acceptance=patch_slack_acceptance,
+                )
+                datasets.append(dataset)
+            except AssertionError:
+                logger.info(f"{path} skipped")
 
         return ConcatDataset(datasets)
 

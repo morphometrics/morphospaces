@@ -1,6 +1,7 @@
 from typing import Dict, List, Tuple
 
 import numpy as np
+from monai.data import MetaTensor
 from scipy.ndimage import gaussian_filter, maximum_filter
 from skimage.measure import block_reduce
 
@@ -130,6 +131,9 @@ class DownscaleSkeletonGroundTruth:
     ) -> Dict[str, np.ndarray]:
         label_image = data_item[self.label_key]
 
+        if isinstance(label_image, MetaTensor):
+            label_image = label_image.array
+
         for scale in self.downscaling_factors:
             (
                 skeleton_target,
@@ -149,6 +153,6 @@ class DownscaleSkeletonGroundTruth:
                 reduced_labels_key: reduced_labels,
             }
 
-            data_item.update({self.label_key: new_ground_truth})
+            data_item.update(new_ground_truth)
 
         return data_item

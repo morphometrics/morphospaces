@@ -16,14 +16,14 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
         labels_key: str = "skeleton_labels",
         skeletonization_target_key: str = "skeletonization_target",
         learning_rate: float = 1e-4,
+        scale_0_loss_coefficient: float = 0.6,
+        scale_1_loss_coefficient: float = 0.3,
+        scale_2_loss_coefficient: float = 0.1,
     ):
         super().__init__()
 
         # store parameters
-        self.learning_rate = learning_rate
-        self.image_key = image_key
-        self.labels_key = labels_key
-        self.skeletonization_target_key = skeletonization_target_key
+        self.save_hyperparameters()
 
         # make the model
         self._model = MultiscaleUnet3D(
@@ -48,7 +48,7 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
         See the pytorch-lightning module documentation for details.
         """
         optimizer = torch.optim.Adam(
-            self._model.parameters(), self.learning_rate
+            self._model.parameters(), self.hparams.learning_rate
         )
         return optimizer
 
@@ -59,19 +59,21 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
         See the pytorch-lightning module documentation for details.
         """
         # get scale 0 data
-        images = batch[self.image_key]
-        labels_scale_0 = batch[self.labels_key]
-        skeletonization_target_scale_0 = batch[self.skeletonization_target_key]
+        images = batch[self.hparams.image_key]
+        labels_scale_0 = batch[self.hparams.labels_key]
+        skeletonization_target_scale_0 = batch[
+            self.hparams.skeletonization_target_key
+        ]
 
         # get scale 1 data (downscaled by 2)
-        skeleton_1_key = f"{self.skeletonization_target_key}_reduced_2"
-        labels_scale_1_key = f"{self.label_key}_reduced_2"
+        skeleton_1_key = f"{self.hparams.skeletonization_target_key}_reduced_2"
+        labels_scale_1_key = f"{self.hparams.labels_key}_reduced_2"
         skeletonization_target_scale_1 = batch[skeleton_1_key]
         labels_scale_1 = batch[labels_scale_1_key]
 
         # get scale 2 data (downscaled by 4)
-        skeleton_2_key = f"{self.skeletonization_target_key}_reduced_4"
-        labels_scale_2_key = f"{self.label_key}_reduced_4"
+        skeleton_2_key = f"{self.hparams.skeletonization_target_key}_reduced_4"
+        labels_scale_2_key = f"{self.hparams.labels_key}_reduced_4"
         skeletonization_target_scale_2 = batch[skeleton_2_key]
         labels_scale_2 = batch[labels_scale_2_key]
 
@@ -89,8 +91,8 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
             skeletonization_target_scale_2=skeletonization_target_scale_2,
         )
 
-        self.log("training_loss", loss, batch_size=len(images))
-        self.log("lr", self.learning_rate, batch_size=len(images))
+        self.log("training_loss", loss, batch_size=len(images), prog_bar=True)
+        self.log("lr", self.hparams.learning_rate, batch_size=len(images))
 
         # log the images
         if (self.iteration_count % 200) == 0:
@@ -131,19 +133,21 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
         module documentation for details.
         """
         # get scale 0 data
-        images = batch[self.image_key]
-        labels_scale_0 = batch[self.labels_key]
-        skeletonization_target_scale_0 = batch[self.skeletonization_target_key]
+        images = batch[self.hparams.image_key]
+        labels_scale_0 = batch[self.hparams.labels_key]
+        skeletonization_target_scale_0 = batch[
+            self.hparams.skeletonization_target_key
+        ]
 
         # get scale 1 data (downscaled by 2)
-        skeleton_1_key = f"{self.skeletonization_target_key}_reduced_2"
-        labels_scale_1_key = f"{self.label_key}_reduced_2"
+        skeleton_1_key = f"{self.hparams.skeletonization_target_key}_reduced_2"
+        labels_scale_1_key = f"{self.hparams.labels_key}_reduced_2"
         skeletonization_target_scale_1 = batch[skeleton_1_key]
         labels_scale_1 = batch[labels_scale_1_key]
 
         # get scale 2 data (downscaled by 4)
-        skeleton_2_key = f"{self.skeletonization_target_key}_reduced_4"
-        labels_scale_2_key = f"{self.label_key}_reduced_4"
+        skeleton_2_key = f"{self.hparams.skeletonization_target_key}_reduced_4"
+        labels_scale_2_key = f"{self.hparams.labels_key}_reduced_4"
         skeletonization_target_scale_2 = batch[skeleton_2_key]
         labels_scale_2 = batch[labels_scale_2_key]
 
@@ -191,7 +195,7 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
         scale_0_loss = self.scale_0_loss(
             input=skeleton_prediction,
             target=skeletonization_target_scale_0,
-            maks=scale_0_mask,
+            mask=scale_0_mask,
         )
 
         # scale 1 loss
@@ -199,7 +203,7 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
         scale_1_loss = self.scale_1_loss(
             input=decoder_outputs[1],
             target=skeletonization_target_scale_1,
-            maks=scale_1_mask,
+            mask=scale_1_mask,
         )
 
         # scale 2 loss
@@ -207,7 +211,11 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
         scale_2_loss = self.scale_2_loss(
             input=decoder_outputs[0],
             target=skeletonization_target_scale_2,
-            maks=scale_2_mask,
+            mask=scale_2_mask,
         )
 
-        return scale_0_loss + scale_1_loss + scale_2_loss
+        return (
+            self.hparams.scale_0_loss_coefficient * scale_0_loss
+            + self.hparams.scale_1_loss_coefficient * scale_1_loss
+            + self.hparams.scale_2_loss_coefficient * scale_2_loss
+        )

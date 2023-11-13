@@ -1,30 +1,85 @@
+import logging
+import sys
+
 import pytorch_lightning as pl
 from monai.data import DataLoader
-from monai.transforms import Compose
+from monai.transforms import Compose, RandAffined, RandFlipd, RandRotate90d
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 
-from morphospaces.datasets import StandardHDF5Dataset
+from morphospaces.datasets import LazyHDF5Dataset, StandardHDF5Dataset
 from morphospaces.networks.multiscale_skeletonization import (
     MultiscaleSkeletonizationNet,
 )
 from morphospaces.transforms.image import ExpandDimsd, ImageAsFloat32
 from morphospaces.transforms.skeleton import DownscaleSkeletonGroundTruth
 
+logger = logging.getLogger("lightning.pytorch")
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler(sys.stdout))
+
+
 if __name__ == "__main__":
     batch_size = 1
     patch_shape = (120, 120, 120)
     patch_stride = (120, 120, 120)
-    patch_threshold = 0.0005
+    patch_threshold = 0.005
     lr = 0.0002
     logdir_path = "./checkpoints"
-    skeletonization_target = "normalized_vector_background_image"
+    skeletonization_target = "skeletonization_target"
 
     pl.seed_everything(42, workers=True)
 
     train_transform = Compose(
         [
-            ImageAsFloat32(keys="normalized_vector_background_image"),
+            ImageAsFloat32(keys="label_image"),
+            RandFlipd(
+                keys=[
+                    "normalized_vector_background_image",
+                    "skeletonization_target",
+                    "label_image",
+                ],
+                prob=0.2,
+            ),
+            RandRotate90d(
+                keys=[
+                    "normalized_vector_background_image",
+                    "skeletonization_target",
+                    "label_image",
+                ],
+                prob=0.1,
+                spatial_axes=(0, 1),
+            ),
+            RandRotate90d(
+                keys=[
+                    "normalized_vector_background_image",
+                    "skeletonization_target",
+                    "label_image",
+                ],
+                prob=0.1,
+                spatial_axes=(0, 2),
+            ),
+            RandRotate90d(
+                keys=[
+                    "normalized_vector_background_image",
+                    "skeletonization_target",
+                    "label_image",
+                ],
+                prob=0.1,
+                spatial_axes=(1, 2),
+            ),
+            RandAffined(
+                keys=[
+                    "normalized_vector_background_image",
+                    "skeletonization_target",
+                    "label_image",
+                ],
+                prob=0.2,
+                mode="nearest",
+                rotate_range=(0.5, 0.5, 0.5),
+                translate_range=(20, 20, 20),
+                scale_range=0.1,
+            ),
             DownscaleSkeletonGroundTruth(
                 label_key="label_image",
                 skeletonization_target_key=skeletonization_target,
@@ -46,8 +101,8 @@ if __name__ == "__main__":
         ]
     )
 
-    train_ds = StandardHDF5Dataset.from_glob_pattern(
-        glob_pattern="./test/*.h5",
+    train_ds = LazyHDF5Dataset.from_glob_pattern(
+        glob_pattern="./test_multiscale/*.h5",
         dataset_keys=[
             "normalized_vector_background_image",
             "label_image",
@@ -59,7 +114,7 @@ if __name__ == "__main__":
         patch_filter_ignore_index=(0,),
         patch_filter_key="label_image",
         patch_threshold=patch_threshold,
-        patch_slack_acceptance=0.01,
+        patch_slack_acceptance=0,
     )
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True, num_workers=4
@@ -67,7 +122,7 @@ if __name__ == "__main__":
 
     val_transform = Compose(
         [
-            ImageAsFloat32(keys="normalized_vector_background_image"),
+            ImageAsFloat32(keys="label_image"),
             DownscaleSkeletonGroundTruth(
                 label_key="label_image",
                 skeletonization_target_key=skeletonization_target,
@@ -90,7 +145,7 @@ if __name__ == "__main__":
     )
 
     val_ds = StandardHDF5Dataset.from_glob_pattern(
-        glob_pattern="./test/*.h5",
+        glob_pattern="./test_multiscale/*.h5",
         dataset_keys=[
             "normalized_vector_background_image",
             "label_image",
@@ -102,7 +157,7 @@ if __name__ == "__main__":
         patch_filter_ignore_index=(0,),
         patch_filter_key="label_image",
         patch_threshold=patch_threshold,
-        patch_slack_acceptance=0.01,
+        patch_slack_acceptance=0,
     )
     val_loader = DataLoader(
         val_ds, batch_size=batch_size, shuffle=False, num_workers=4
@@ -134,9 +189,7 @@ if __name__ == "__main__":
     )
 
     # logger
-    logger = TensorBoardLogger(
-        save_dir=logdir_path, version=1, name="lightning_logs"
-    )
+    logger = TensorBoardLogger(save_dir=logdir_path, name="lightning_logs")
 
     trainer = pl.Trainer(
         accelerator="gpu",
@@ -144,9 +197,10 @@ if __name__ == "__main__":
         callbacks=[best_checkpoint_callback, last_checkpoint_callback],
         logger=logger,
         max_epochs=2000,
+        log_every_n_steps=100,
     )
     trainer.fit(
         net,
-        train_dataloaders=val_loader,
+        train_dataloaders=train_loader,
         val_dataloaders=val_loader,
     )
