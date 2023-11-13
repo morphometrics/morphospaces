@@ -97,7 +97,7 @@ class MaskFromVectorField:
     input_key : str
         The key for the vector field
     output_key : str
-        The key to save the
+        The key to save the vector field to
     """
 
     def __init__(self, input_key: str, output_key: str):

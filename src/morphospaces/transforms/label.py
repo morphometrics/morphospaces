@@ -64,3 +64,32 @@ class LabelToBoundaryd:
 
         data_item.update({self.label_key: boundary_image})
         return data_item
+
+
+class LabelToMaskd:
+    """Convert dense labels to a mask image.
+
+    Parameters
+    ----------
+    input_key : str
+        The key to make mask from
+    output_key : str
+        The key to save the mask to
+    background_value : int
+        The value in the label image corresponding to background.
+        All voxels matching the background_value are set to False.
+        All others are True.
+    """
+
+    def __init__(
+        self, input_key: str, output_key: str, background_value: int = 0
+    ):
+        self.input_key = input_key
+        self.output_key = output_key
+        self.background_value = background_value
+
+    def __call__(self, data_item: Dict[str, np.ndarray]):
+        mask = data_item[self.input_key] != self.background_value
+
+        data_item.update({self.output_key: mask})
+        return data_item
