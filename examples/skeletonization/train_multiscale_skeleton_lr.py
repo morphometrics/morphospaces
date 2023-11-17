@@ -10,7 +10,7 @@ from monai.transforms import (
     RandRotate90d,
     RandScaleIntensityd,
 )
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from morphospaces.datasets import LazyHDF5Dataset, StandardHDF5Dataset
@@ -31,14 +31,20 @@ if __name__ == "__main__":
     patch_stride = (120, 120, 120)
     patch_threshold = 0.01
     lr = 0.0004
-    logdir_path = "./checkpoints"
+    logdir_path = "./checkpoints_lr"
     skeletonization_target = "skeletonization_target"
-    train_data_pattern = "./data/*.h5"
-    val_data_pattern = "./data_val/*.h5"
+    train_data_pattern = (
+        "/local1/kevin/code/morphospaces/examples/"
+        "skeletonization/train_multiscale/train/*.h5"
+    )
+    val_data_pattern = (
+        "/local1/kevin/code/morphospaces/examples/"
+        "skeletonization/train_multiscale/val/*.h5"
+    )
     # train_data_pattern = "./test_multiscale/*.h5"
     # val_data_pattern = "./test_multiscale/*.h5"
     log_every_n_iterations = 100
-    val_check_interval = 0.1
+    val_check_interval = 0.25
 
     pl.seed_everything(42, workers=True)
 
@@ -179,6 +185,9 @@ if __name__ == "__main__":
         filename="skel-last",
     )
 
+    # learning rate monitor
+    learning_rate_monitor = LearningRateMonitor(logging_interval="step")
+
     net = MultiscaleSkeletonizationNet(
         in_channels=1,
         image_key="normalized_vector_background_image",
@@ -192,8 +201,12 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         accelerator="gpu",
-        devices=1,
-        callbacks=[best_checkpoint_callback, last_checkpoint_callback],
+        devices=[1],
+        callbacks=[
+            best_checkpoint_callback,
+            last_checkpoint_callback,
+            learning_rate_monitor,
+        ],
         logger=logger,
         max_epochs=2000,
         log_every_n_steps=log_every_n_iterations,

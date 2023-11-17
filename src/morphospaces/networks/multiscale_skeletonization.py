@@ -2,6 +2,7 @@ from typing import Dict, List
 
 import pytorch_lightning as pl
 import torch
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from morphospaces.logging.image import log_images
 from morphospaces.losses.regression import MaskedSmoothL1Loss
@@ -19,6 +20,9 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
         scale_0_loss_coefficient: float = 0.6,
         scale_1_loss_coefficient: float = 0.3,
         scale_2_loss_coefficient: float = 0.1,
+        lr_scheduler_step: int = 1000,
+        lr_reduction_factor: float = 0.2,
+        lr_reduction_patience: int = 15,
     ):
         super().__init__()
 
@@ -50,7 +54,21 @@ class MultiscaleSkeletonizationNet(pl.LightningModule):
         optimizer = torch.optim.Adam(
             self._model.parameters(), self.hparams.learning_rate
         )
-        return optimizer
+        learning_rate_scheduler = ReduceLROnPlateau(
+            optimizer=optimizer,
+            factor=self.hparams.lr_reduction_factor,
+            patience=self.hparams.lr_reduction_patience,
+        )
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": learning_rate_scheduler,
+                "interval": "step",
+                "frequency": self.hparams.lr_scheduler_step,
+                "monitor": "val_loss",
+            },
+        }
 
     def training_step(
         self, batch: Dict[str, torch.Tensor], batch_idx: int
