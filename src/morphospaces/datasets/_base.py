@@ -1,17 +1,146 @@
 import glob
 import logging
-from typing import Tuple
+from typing import Dict, List, Tuple, Union
 
 import dask.array as da
 import numpy as np
+from numpy.typing import ArrayLike
 from torch.utils.data import ConcatDataset, Dataset
 
-from morphospaces.datasets.utils import FilterSliceBuilder, SliceBuilder
+from morphospaces.datasets.utils import (
+    FilterSliceBuilder,
+    PatchManager,
+    SliceBuilder,
+)
 
-logger = logging.getLogger("lightning")
+logger = logging.getLogger("lightning.pytorch")
 
 
 class BaseTiledDataset(Dataset):
+    """
+    Implementation of torch.utils.data.Dataset,
+    which iterates over the raw and label datasets
+    patch by patch with a given stride.
+    """
+
+    def __init__(
+        self,
+        file_path: str,
+        dataset_keys: List[str],
+        transform=None,
+        patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (
+            96,
+            96,
+            96,
+        ),
+        stride_shape: Union[
+            Tuple[int, int, int], Tuple[int, int, int, int]
+        ] = (24, 24, 24),
+        patch_filter_ignore_index: Tuple[int, ...] = (0,),
+        patch_filter_key: str = "label",
+        patch_threshold: float = 0.6,
+        patch_slack_acceptance=0.01,
+    ):
+        self.file_path = file_path
+
+        # load the data (will be lazy if get_array() returns lazy object)
+        assert len(dataset_keys) > 0, "dataset_keys must be a non-empty list"
+        self.data: Dict[str, ArrayLike] = {
+            key: self.get_array(self.file_path, key) for key in dataset_keys
+        }
+
+        # make the slices
+        assert (
+            patch_filter_key in self.data
+        ), "patch_filter_key must be a dataset key"
+        self.patches = PatchManager(
+            data=self.data,
+            patch_shape=patch_shape,
+            stride_shape=stride_shape,
+            patch_filter_ignore_index=patch_filter_ignore_index,
+            patch_filter_key=patch_filter_key,
+            patch_threshold=patch_threshold,
+            patch_slack_acceptance=patch_slack_acceptance,
+        )
+
+        logger.info(
+            f"Loaded: {file_path}\n    Number of patches: {self.patch_count}"
+        )
+
+        # store the transformation
+        self.transform = transform
+
+    @property
+    def patch_count(self) -> int:
+        return len(self.patches)
+
+    @staticmethod
+    def get_array(file_path: str, internal_path: str) -> ArrayLike:
+        raise NotImplementedError
+
+    def __getitem__(self, idx: int) -> Dict[str, ArrayLike]:
+        if idx >= len(self):
+            raise StopIteration
+
+        # get the slice for a given index 'idx'
+        slice_indices = self.patches.slices[idx]
+
+        # get the data
+        data_patch = {
+            key: array[slice_indices] for key, array in self.data.items()
+        }
+
+        if self.transform is not None:
+            # transform the data
+            data_patch = self.transform(data_patch)
+
+        return data_patch
+
+    def __len__(self) -> int:
+        return self.patch_count
+
+    @classmethod
+    def from_glob_pattern(
+        cls,
+        glob_pattern: str,
+        dataset_keys: List[str],
+        transform=None,
+        patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (
+            96,
+            96,
+            96,
+        ),
+        stride_shape: Union[
+            Tuple[int, int, int], Tuple[int, int, int, int]
+        ] = (24, 24, 24),
+        patch_filter_ignore_index: Tuple[int, ...] = (0,),
+        patch_filter_key: str = "label",
+        patch_threshold: float = 0.6,
+        patch_slack_acceptance=0.01,
+    ):
+        file_paths = glob.glob(glob_pattern)
+        datasets = []
+        for path in file_paths:
+            try:
+                dataset = cls(
+                    file_path=path,
+                    dataset_keys=dataset_keys,
+                    transform=transform,
+                    patch_shape=patch_shape,
+                    stride_shape=stride_shape,
+                    patch_filter_ignore_index=patch_filter_ignore_index,
+                    patch_filter_key=patch_filter_key,
+                    patch_threshold=patch_threshold,
+                    patch_slack_acceptance=patch_slack_acceptance,
+                )
+                datasets.append(dataset)
+            except AssertionError:
+                logger.info(f"{path} skipped")
+
+        return ConcatDataset(datasets)
+
+
+class BaseTiledDataset2(Dataset):
     """
     Implementation of torch.utils.data.Dataset,
      which iterates over the raw and label datasets
@@ -105,7 +234,7 @@ class BaseTiledDataset(Dataset):
                 self.weight_map,
                 patch_shape,
                 stride_shape,
-                ignore_index=patch_filter_ignore_index,
+                filter_ignore_index=patch_filter_ignore_index,
                 threshold=patch_threshold,
                 slack_acceptance=patch_slack_acceptance,
             )

@@ -81,4 +81,8 @@ def normalize_image(image: np.ndarray) -> np.ndarray:
     normalized_image : np.ndarray
         The input image rescaled to go from 0 to 1.
     """
-    return np.nan_to_num((image - np.min(image)) / np.ptp(image))
+    image_range = np.ptp(image)
+    if image_range == 0:
+        return np.ones_like(image)
+    else:
+        return np.nan_to_num((image - np.min(image)) / image_range)

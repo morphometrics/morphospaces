@@ -22,17 +22,14 @@ def test_standard_hdf5_dataset(tmp_path):
     dataset_path = _make_hdf5_dataset(tmp_path)
     ds = StandardHDF5Dataset(
         file_path=dataset_path,
-        stage="train",
+        dataset_keys=["raw", "label"],
         transform=None,
         patch_shape=patch_shape,
         stride_shape=(2, 2, 2),
         patch_filter_ignore_index=(0,),
         patch_threshold=0,
         patch_slack_acceptance=0.01,
-        mirror_padding=(16, 32, 32),
-        raw_internal_path="raw",
-        label_internal_path="label",
-        weight_internal_path=None,
+        patch_filter_key="label",
     )
 
     assert len(ds) == (9 * 9 * 9)
@@ -45,17 +42,14 @@ def test_lazy_hdf5_dataset(tmp_path):
     dataset_path = _make_hdf5_dataset(tmp_path)
     ds = LazyHDF5Dataset(
         file_path=dataset_path,
-        stage="train",
+        dataset_keys=["raw", "label"],
         transform=None,
         patch_shape=patch_shape,
         stride_shape=(2, 2, 2),
         patch_filter_ignore_index=(0,),
         patch_threshold=0,
         patch_slack_acceptance=0.01,
-        mirror_padding=(16, 32, 32),
-        raw_internal_path="raw",
-        label_internal_path="label",
-        weight_internal_path=None,
+        patch_filter_key="label",
     )
 
     assert len(ds) == (9 * 9 * 9)
