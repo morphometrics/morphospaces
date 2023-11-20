@@ -96,7 +96,7 @@ class LabelToMaskd:
         return data_item
 
 
-class DownscaleLabelsD:
+class DownscaleLabelsd:
     """Downscale the skeleton ground truth.
 
     Parameters
