@@ -134,7 +134,14 @@ class DownscaleSkeletonGroundTruth:
         if isinstance(label_image, MetaTensor):
             label_image = label_image.array
 
+        if label_image.ndim == 4:
+            # do the downscaling on ZYX, but expand back to CZYX after
+            label_image = np.squeeze(label_image, axis=0)
+            expand_dims = True
+        else:
+            expand_dims = False
         for scale in self.downscaling_factors:
+
             (
                 skeleton_target,
                 reduced_labels,
@@ -144,6 +151,11 @@ class DownscaleSkeletonGroundTruth:
                 gaussian_sigma=self.gaussian_sigmas,
                 norm_neighborhood_size=self.normalization_neighborhood_sizes,
             )
+
+            if expand_dims:
+                # expand up to CZYX if the input was CZYX
+                skeleton_target = np.expand_dims(skeleton_target, axis=0)
+                reduced_labels = np.expand_dims(reduced_labels, axis=0)
 
             # store the downscaled data
             skeleton_key = f"{self.skeletonization_target_key}_reduced_{scale}"

@@ -1,6 +1,8 @@
-from typing import Dict
+from typing import Dict, List, Union
 
 import numpy as np
+from monai.data import MetaTensor
+from skimage.measure import block_reduce
 from skimage.segmentation import find_boundaries
 
 
@@ -92,4 +94,95 @@ class LabelToMaskd:
         mask = data_item[self.input_key] != self.background_value
 
         data_item.update({self.output_key: mask})
+        return data_item
+
+
+class DownscaleLabelsd:
+    """Downscale the skeleton ground truth.
+
+    Parameters
+    ----------
+    label_key : str
+        The key in the dataset for the label image.
+    downscaling_factors : List[int]
+        The factors by which to downscale the label image before
+        making the ground truth.
+    """
+
+    def __init__(
+        self,
+        label_key: str,
+        downscaling_factors: List[int],
+    ):
+        self.label_key = label_key
+        self.downscaling_factors = downscaling_factors
+
+    def __call__(
+        self, data_item: Dict[str, np.ndarray]
+    ) -> Dict[str, np.ndarray]:
+        label_image = data_item[self.label_key]
+
+        if isinstance(label_image, MetaTensor):
+            label_image = label_image.array
+
+        for downscaling_factor in self.downscaling_factors:
+            # reduce the label image
+            reduced_labels = block_reduce(
+                label_image, block_size=downscaling_factor, func=np.max
+            )
+
+            # store the downscaled data
+            reduced_labels_key = (
+                f"{self.label_key}_reduced_{downscaling_factor}"
+            )
+            data_item.update({reduced_labels_key: reduced_labels})
+
+        return data_item
+
+
+class LabelsAsFloat32:
+    """Convert a label image to a float32 array.
+
+    Parameters
+    ----------
+    keys : Union[str, List[str]]
+        The keys in the dataset to apply the transform to.
+    """
+
+    def __init__(self, keys: Union[str, List[str]]):
+        if isinstance(keys, str):
+            keys = [keys]
+        self.keys: List[str] = keys
+
+    def __call__(
+        self, data_item: Dict[str, np.ndarray]
+    ) -> Dict[str, np.ndarray]:
+        for key in self.keys:
+            image = data_item[key]
+            data_item.update({key: np.asarray(image, dtype=np.single)})
+
+        return data_item
+
+
+class LabelsAsLong:
+    """Convert a label image to a long array.
+
+    Parameters
+    ----------
+    keys : Union[str, List[str]]
+        The keys in the dataset to apply the transform to.
+    """
+
+    def __init__(self, keys: Union[str, List[str]]):
+        if isinstance(keys, str):
+            keys = [keys]
+        self.keys: List[str] = keys
+
+    def __call__(
+        self, data_item: Dict[str, np.ndarray]
+    ) -> Dict[str, np.ndarray]:
+        for key in self.keys:
+            image = data_item[key]
+            data_item.update({key: np.asarray(image, dtype=np.int_)})
+
         return data_item
