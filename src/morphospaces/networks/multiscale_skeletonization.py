@@ -417,19 +417,19 @@ class MultiscaleSemanticSkeletonizationNet(pl.LightningModule):
         # scale 0 loss
         scale_0_loss = self.scale_0_loss(
             input=skeleton_prediction,
-            target=labels_scale_0,
+            target=labels_scale_0.long(),
         )
 
         # scale 1 loss
         scale_1_loss = self.scale_1_loss(
             input=decoder_outputs[1],
-            target=labels_scale_1,
+            target=labels_scale_1.long(),
         )
 
         # scale 2 loss
         scale_2_loss = self.scale_2_loss(
             input=decoder_outputs[0],
-            target=labels_scale_2,
+            target=labels_scale_2.long(),
         )
 
         return (
