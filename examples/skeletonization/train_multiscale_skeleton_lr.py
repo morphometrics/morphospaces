@@ -17,12 +17,16 @@ from morphospaces.datasets import LazyHDF5Dataset, StandardHDF5Dataset
 from morphospaces.networks.multiscale_skeletonization import (
     MultiscaleSkeletonizationNet,
 )
-from morphospaces.transforms.image import ExpandDimsd, LabelsAsFloat32
+from morphospaces.transforms.image import ExpandDimsd
+from morphospaces.transforms.label import LabelsAsFloat32
 from morphospaces.transforms.skeleton import DownscaleSkeletonGroundTruth
 
 logger = logging.getLogger("lightning.pytorch")
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stdout))
+
+# use mixed precision for Tensor cores (speedup but less precise)
+# torch.set_float32_matmul_precision("medium")
 
 
 if __name__ == "__main__":
@@ -30,8 +34,8 @@ if __name__ == "__main__":
     patch_shape = (120, 120, 120)
     patch_stride = (120, 120, 120)
     patch_threshold = 0.01
-    lr = 0.0004
-    logdir_path = "./checkpoints_lr"
+    lr = 0.002
+    logdir_path = "./checkpoints_lr_20231123"
     skeletonization_target = "skeletonization_target"
     train_data_pattern = (
         "/local1/kevin/code/morphospaces/examples/"
@@ -43,18 +47,28 @@ if __name__ == "__main__":
     )
     # train_data_pattern = "./test_multiscale/*.h5"
     # val_data_pattern = "./test_multiscale/*.h5"
-    log_every_n_iterations = 100
+    log_every_n_iterations = 25
     val_check_interval = 0.25
+    lr_reduction_patience = 25
+    lr_scheduler_step = 1000
+    accumulate_grad_batches = 4
 
     pl.seed_everything(42, workers=True)
 
     train_transform = Compose(
         [
             LabelsAsFloat32(keys="label_image"),
+            ExpandDimsd(
+                keys=[
+                    "normalized_vector_background_image",
+                    "skeletonization_target",
+                    "label_image",
+                ]
+            ),
             RandScaleIntensityd(
                 keys="normalized_vector_background_image",
                 factors=(-0.5, 0),
-                prob=0.2,
+                prob=0.25,
             ),
             RandFlipd(
                 keys=[
@@ -63,6 +77,25 @@ if __name__ == "__main__":
                     "label_image",
                 ],
                 prob=0.2,
+                spatial_axis=0,
+            ),
+            RandFlipd(
+                keys=[
+                    "normalized_vector_background_image",
+                    "skeletonization_target",
+                    "label_image",
+                ],
+                prob=0.2,
+                spatial_axis=1,
+            ),
+            RandFlipd(
+                keys=[
+                    "normalized_vector_background_image",
+                    "skeletonization_target",
+                    "label_image",
+                ],
+                prob=0.2,
+                spatial_axis=2,
             ),
             RandRotate90d(
                 keys=[
@@ -70,8 +103,26 @@ if __name__ == "__main__":
                     "skeletonization_target",
                     "label_image",
                 ],
-                prob=0.1,
+                prob=0.25,
                 spatial_axes=(0, 1),
+            ),
+            RandRotate90d(
+                keys=[
+                    "normalized_vector_background_image",
+                    "skeletonization_target",
+                    "label_image",
+                ],
+                prob=0.25,
+                spatial_axes=(0, 2),
+            ),
+            RandRotate90d(
+                keys=[
+                    "normalized_vector_background_image",
+                    "skeletonization_target",
+                    "label_image",
+                ],
+                prob=0.25,
+                spatial_axes=(1, 2),
             ),
             RandAffined(
                 keys=[
@@ -79,9 +130,9 @@ if __name__ == "__main__":
                     "skeletonization_target",
                     "label_image",
                 ],
-                prob=0.2,
+                prob=0.5,
                 mode="nearest",
-                rotate_range=(0.5, 0.5, 0.5),
+                rotate_range=(1.5, 1.5, 1.5),
                 translate_range=(20, 20, 20),
                 scale_range=0.1,
             ),
@@ -91,17 +142,6 @@ if __name__ == "__main__":
                 downscaling_factors=[2, 4],
                 gaussian_sigma=1,
                 normalization_neighborhood_sizes=5,
-            ),
-            ExpandDimsd(
-                keys=[
-                    "normalized_vector_background_image",
-                    "skeletonization_target",
-                    "label_image",
-                    "skeletonization_target_reduced_2",
-                    "label_image_reduced_2",
-                    "skeletonization_target_reduced_4",
-                    "label_image_reduced_4",
-                ]
             ),
         ]
     )
@@ -128,23 +168,19 @@ if __name__ == "__main__":
     val_transform = Compose(
         [
             LabelsAsFloat32(keys="label_image"),
+            ExpandDimsd(
+                keys=[
+                    "normalized_vector_background_image",
+                    "skeletonization_target",
+                    "label_image",
+                ]
+            ),
             DownscaleSkeletonGroundTruth(
                 label_key="label_image",
                 skeletonization_target_key=skeletonization_target,
                 downscaling_factors=[2, 4],
                 gaussian_sigma=1,
                 normalization_neighborhood_sizes=5,
-            ),
-            ExpandDimsd(
-                keys=[
-                    "normalized_vector_background_image",
-                    "skeletonization_target",
-                    "label_image",
-                    "skeletonization_target_reduced_2",
-                    "label_image_reduced_2",
-                    "skeletonization_target_reduced_4",
-                    "label_image_reduced_4",
-                ]
             ),
         ]
     )
@@ -194,6 +230,8 @@ if __name__ == "__main__":
         labels_key="label_image",
         skeletonization_target_key="skeletonization_target",
         learning_rate=lr,
+        lr_reduction_patience=lr_reduction_patience,
+        lr_scheduler_step=lr_scheduler_step,
     )
 
     # logger
@@ -201,7 +239,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         accelerator="gpu",
-        devices=[1],
+        devices=[0],
         callbacks=[
             best_checkpoint_callback,
             last_checkpoint_callback,
@@ -209,6 +247,7 @@ if __name__ == "__main__":
         ],
         logger=logger,
         max_epochs=2000,
+        accumulate_grad_batches=accumulate_grad_batches,
         log_every_n_steps=log_every_n_iterations,
         val_check_interval=val_check_interval,
     )

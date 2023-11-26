@@ -17,8 +17,8 @@ from morphospaces.datasets import LazyHDF5Dataset, StandardHDF5Dataset
 from morphospaces.networks.multiscale_skeletonization import (
     MultiscaleSemanticSkeletonizationNet,
 )
-from morphospaces.transforms.image import ExpandDimsd, LabelsAsFloat32
-from morphospaces.transforms.label import DownscaleLabelsd
+from morphospaces.transforms.image import ExpandDimsd
+from morphospaces.transforms.label import DownscaleLabelsd, LabelsAsLong
 
 logger = logging.getLogger("lightning.pytorch")
 logger.setLevel(logging.INFO)
@@ -31,26 +31,25 @@ if __name__ == "__main__":
     patch_stride = (120, 120, 120)
     patch_threshold = 0.01
     lr = 0.0004
-    logdir_path = "./checkpoints_lr"
-    skeletonization_target = "skeletonization_target"
-    train_data_pattern = (
-        "/local1/kevin/code/morphospaces/examples/"
-        "skeletonization/train_multiscale/train/*.h5"
-    )
-    val_data_pattern = (
-        "/local1/kevin/code/morphospaces/examples/"
-        "skeletonization/train_multiscale/val/*.h5"
-    )
-    # train_data_pattern = "./test_multiscale/*.h5"
-    # val_data_pattern = "./test_multiscale/*.h5"
-    log_every_n_iterations = 100
-    val_check_interval = 0.25
+    logdir_path = "./checkpoints_semantic"
+    # train_data_pattern = (
+    #     "/local1/kevin/code/morphospaces/examples/"
+    #     "skeletonization/train_multiscale/train/*.h5"
+    # )
+    # val_data_pattern = (
+    #     "/local1/kevin/code/morphospaces/examples/"
+    #     "skeletonization/train_multiscale/val/*.h5"
+    # )
+    train_data_pattern = "./test_multiscale/*.h5"
+    val_data_pattern = "./test_multiscale/*.h5"
+    log_every_n_iterations = 5
+    val_check_interval = 1.0
 
     pl.seed_everything(42, workers=True)
 
     train_transform = Compose(
         [
-            LabelsAsFloat32(keys="label_image"),
+            LabelsAsLong(keys="label_image"),
             RandScaleIntensityd(
                 keys="normalized_vector_background_image",
                 factors=(-0.5, 0),
@@ -59,7 +58,6 @@ if __name__ == "__main__":
             RandFlipd(
                 keys=[
                     "normalized_vector_background_image",
-                    "skeletonization_target",
                     "label_image",
                 ],
                 prob=0.2,
@@ -67,7 +65,6 @@ if __name__ == "__main__":
             RandRotate90d(
                 keys=[
                     "normalized_vector_background_image",
-                    "skeletonization_target",
                     "label_image",
                 ],
                 prob=0.1,
@@ -76,7 +73,6 @@ if __name__ == "__main__":
             RandAffined(
                 keys=[
                     "normalized_vector_background_image",
-                    "skeletonization_target",
                     "label_image",
                 ],
                 prob=0.2,
@@ -92,12 +88,6 @@ if __name__ == "__main__":
             ExpandDimsd(
                 keys=[
                     "normalized_vector_background_image",
-                    "skeletonization_target",
-                    "label_image",
-                    "skeletonization_target_reduced_2",
-                    "label_image_reduced_2",
-                    "skeletonization_target_reduced_4",
-                    "label_image_reduced_4",
                 ]
             ),
         ]
@@ -108,7 +98,6 @@ if __name__ == "__main__":
         dataset_keys=[
             "normalized_vector_background_image",
             "label_image",
-            "skeletonization_target",
         ],
         transform=train_transform,
         patch_shape=patch_shape,
@@ -124,7 +113,7 @@ if __name__ == "__main__":
 
     val_transform = Compose(
         [
-            LabelsAsFloat32(keys="label_image"),
+            LabelsAsLong(keys="label_image"),
             DownscaleLabelsd(
                 label_key="label_image",
                 downscaling_factors=[2, 4],
@@ -132,12 +121,6 @@ if __name__ == "__main__":
             ExpandDimsd(
                 keys=[
                     "normalized_vector_background_image",
-                    "skeletonization_target",
-                    "label_image",
-                    "skeletonization_target_reduced_2",
-                    "label_image_reduced_2",
-                    "skeletonization_target_reduced_4",
-                    "label_image_reduced_4",
                 ]
             ),
         ]
@@ -148,7 +131,6 @@ if __name__ == "__main__":
         dataset_keys=[
             "normalized_vector_background_image",
             "label_image",
-            "skeletonization_target",
         ],
         transform=val_transform,
         patch_shape=patch_shape,
@@ -194,7 +176,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         accelerator="gpu",
-        devices=[1],
+        devices=1,
         callbacks=[
             best_checkpoint_callback,
             last_checkpoint_callback,

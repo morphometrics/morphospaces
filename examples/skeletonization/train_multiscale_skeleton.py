@@ -17,7 +17,8 @@ from morphospaces.datasets import LazyHDF5Dataset, StandardHDF5Dataset
 from morphospaces.networks.multiscale_skeletonization import (
     MultiscaleSkeletonizationNet,
 )
-from morphospaces.transforms.image import ExpandDimsd, LabelsAsFloat32
+from morphospaces.transforms.image import ExpandDimsd
+from morphospaces.transforms.label import LabelsAsFloat32
 from morphospaces.transforms.skeleton import DownscaleSkeletonGroundTruth
 
 logger = logging.getLogger("lightning.pytorch")
