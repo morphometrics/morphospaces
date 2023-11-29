@@ -97,6 +97,36 @@ class LabelToMaskd:
         return data_item
 
 
+class ExtractSingleLabeld:
+    """Create a new label image containing a single class from a label image.
+
+    The resulting mask will have the same shape as the input label image and
+    have the selected label value set to 1.
+
+    Parameters
+    ----------
+    input_key : str
+        The key to make mask from
+    output_key : str
+        The key to save the mask to
+    label_value : int
+        The value in the label to extract.
+    """
+
+    def __init__(self, input_key: str, output_key: str, label_value: int = 1):
+        self.input_key = input_key
+        self.output_key = output_key
+        self.label_value = label_value
+
+    def __call__(self, data_item: Dict[str, np.ndarray]):
+        original_labels = data_item[self.input_key]
+        new_labels = np.zeros_like(original_labels)
+        new_labels[original_labels == self.label_value] = 1
+
+        data_item.update({self.output_key: new_labels})
+        return data_item
+
+
 class DownscaleLabelsd:
     """Downscale the skeleton ground truth.
 
