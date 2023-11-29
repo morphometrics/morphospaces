@@ -244,6 +244,7 @@ class MultiscaleSemanticSkeletonizationNet(pl.LightningModule):
     def __init__(
         self,
         in_channels: int = 1,
+        out_channels: int = 2,
         image_key: str = "image",
         labels_key: str = "skeleton_labels",
         learning_rate: float = 1e-4,
@@ -262,13 +263,13 @@ class MultiscaleSemanticSkeletonizationNet(pl.LightningModule):
         # make the model
         self._model = MultiscaleUnet3D(
             in_channels=in_channels,
-            out_channels=3,
+            out_channels=out_channels,
         )
 
         # setup the loss functions
-        self.scale_0_loss = WeightedCrossEntropyLoss(ignore_index=0)
-        self.scale_1_loss = WeightedCrossEntropyLoss(ignore_index=0)
-        self.scale_2_loss = WeightedCrossEntropyLoss(ignore_index=0)
+        self.scale_0_loss = WeightedCrossEntropyLoss()
+        self.scale_1_loss = WeightedCrossEntropyLoss()
+        self.scale_2_loss = WeightedCrossEntropyLoss()
 
         self.iteration_count = 0
         self.validation_step_outputs = []
@@ -417,19 +418,19 @@ class MultiscaleSemanticSkeletonizationNet(pl.LightningModule):
         # scale 0 loss
         scale_0_loss = self.scale_0_loss(
             input=skeleton_prediction,
-            target=labels_scale_0.long(),
+            target=torch.squeeze(labels_scale_0, dim=1).long(),
         )
 
         # scale 1 loss
         scale_1_loss = self.scale_1_loss(
             input=decoder_outputs[1],
-            target=labels_scale_1.long(),
+            target=torch.squeeze(labels_scale_1, dim=1).long(),
         )
 
         # scale 2 loss
         scale_2_loss = self.scale_2_loss(
             input=decoder_outputs[0],
-            target=labels_scale_2.long(),
+            target=torch.squeeze(labels_scale_2, dim=1).long(),
         )
 
         return (

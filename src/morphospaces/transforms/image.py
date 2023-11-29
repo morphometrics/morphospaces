@@ -140,11 +140,20 @@ class NormVectorField:
         return data_item
 
 
-class RandPatchReduceIntensity:
-    def __init__(self, label_key: str, image_key: str, patch_width: int):
+class RandPatchReduceIntensityd:
+    def __init__(
+        self,
+        label_key: str,
+        image_key: str,
+        patch_width: int,
+        attenuation_factor: float = 0.5,
+        n_patches: int = 1,
+    ):
         self.label_key = label_key
         self.image_key = image_key
         self.patch_width = patch_width
+        self.attenuation_factor = attenuation_factor
+        self.n_patches = n_patches
 
         # pre-compute the gaussian kernel
         (
@@ -156,7 +165,7 @@ class RandPatchReduceIntensity:
         """Generate a 3D Gaussian kernel."""
         # compute the grid coordinates centered
         patch_half_width = self.patch_width // 2
-        z, y, x = np.meshgrid[
+        z, y, x = np.mgrid[
             -patch_half_width:patch_half_width:1,
             -patch_half_width:patch_half_width:1,
             -patch_half_width:patch_half_width:1,
@@ -191,12 +200,14 @@ class RandPatchReduceIntensity:
         shifted_coordinates = self.kernel_coordinates + patch_centroid
 
         # get a mask of coordinates inside the image bounds
-        inside_bounds_mask = np.any(
-            np.logical_and(
-                shifted_coordinates >= min_coordinates,
-                shifted_coordinates <= max_coordinates,
-            ),
-            axis=1,
+        above_minimum_mask = np.all(
+            shifted_coordinates >= min_coordinates, axis=1
+        )
+        below_maximum_mask = np.all(
+            shifted_coordinates <= max_coordinates, axis=1
+        )
+        inside_bounds_mask = (
+            np.logical_and(above_minimum_mask, below_maximum_mask),
         )
 
         # get the coordinates in the image bounds
@@ -217,20 +228,33 @@ class RandPatchReduceIntensity:
         label_image = data_item[self.label_key]
 
         label_mask = label_image != 0
-
-        # get a random pixel coordinate in the foreground of the label mask
         pixel_coordinates = np.argwhere(label_mask)
-        bounding_box_center = np.random.choice(pixel_coordinates, size=1)
-
-        coordinates, kernel_values = self.create_gaussian_attenuation_patch(
-            patch_centroid=bounding_box_center,
-            image_shape=image.shape,
-            attenuation_factor=0.5,
-        )
+        if len(pixel_coordinates) == 0:
+            # there are no foreground pixels, so just return the image
+            return data_item
 
         # make the attenuation map
         attenuation_map = np.ones_like(image)
-        attenuation_map[tuple(coordinates.T)] = 1 - kernel_values
+        coordinate_array_index = np.random.choice(
+            np.arange(pixel_coordinates.shape[0]), size=self.n_patches
+        )
+
+        for index in coordinate_array_index:
+            # get a random pixel coordinate in the foreground of the label mask
+            bounding_box_center = pixel_coordinates[index]
+
+            # attenuate selected pixels
+            (
+                coordinates,
+                kernel_values,
+            ) = self.create_gaussian_attenuation_patch(
+                patch_centroid=bounding_box_center,
+                image_shape=image.shape,
+                attenuation_factor=self.attenuation_factor,
+            )
+            patch_attenuation_map = np.ones_like(image)
+            patch_attenuation_map[tuple(coordinates.T)] = 1 - kernel_values
+            attenuation_map *= patch_attenuation_map
 
         # apply the attenuation map and store the result
         attenuated_image = image * attenuation_map
