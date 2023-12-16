@@ -146,7 +146,7 @@ class RandPatchReduceIntensityd:
         label_key: str,
         image_key: str,
         patch_width: int,
-        attenuation_factor: float = 0.5,
+        attenuation_factor: Tuple[float, float] = (0.5, 0.8),
         n_patches: int = 1,
     ):
         self.label_key = label_key
@@ -190,7 +190,7 @@ class RandPatchReduceIntensityd:
         self,
         patch_centroid: np.ndarray,
         image_shape: Tuple[int, int, int],
-        attenuation_factor: float = 0.5,
+        attenuation_factor: Tuple[float, float] = (0.5, 0.8),
     ):
         # get the bounds of the image to clip the patch coordinates
         min_coordinates = np.array([0, 0, 0])
@@ -214,6 +214,9 @@ class RandPatchReduceIntensityd:
         coordinates_in_image = shifted_coordinates[inside_bounds_mask]
 
         # get the kernel values int the image bounds
+        attenuation_factor = np.random.uniform(
+            attenuation_factor[0], attenuation_factor[1]
+        )
         kernel_values_in_image = (
             attenuation_factor * self.kernel_values[inside_bounds_mask]
         )
