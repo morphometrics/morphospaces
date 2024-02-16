@@ -128,6 +128,7 @@ def train(
         accumulate_grad_batches=accumulate_grad_batches,
         seed_value=seed_value,
         n_dataset_workers=n_dataset_workers,
+        gpus=gpus,
     )
 
 
