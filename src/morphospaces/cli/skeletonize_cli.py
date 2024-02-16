@@ -98,13 +98,19 @@ def train(
             help="The number of workers to use for each dataset loader ."
         ),
     ] = 4,
+    gpus: Annotated[
+        Tuple[int, ...], typer.Option(help="The indices of the GPUs to use.")
+    ] = (0,),
 ):
+    """Train the multiscale skeletonization network."""
     # lazy import to save time when user just prompts for help
     from morphospaces.training.multiscale_skeletonization import (
         train as train_func,
     )
 
-    """Train the multiscale skeletonization network."""
+    if type(gpus) is int:
+        # coerce GPUS input to tuple
+        gpus = (gpus,)
     train_func(
         train_data_pattern=train_data_pattern,
         val_data_pattern=val_data_pattern,
