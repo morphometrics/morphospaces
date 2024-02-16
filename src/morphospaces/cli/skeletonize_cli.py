@@ -4,10 +4,6 @@ from typing import Tuple
 import typer
 from typing_extensions import Annotated
 
-from morphospaces.training.multiscale_skeletonization import (
-    train as train_func,
-)
-
 app = typer.Typer(
     help="Skeletonize segementations with a multiscale 3D UNet.",
     no_args_is_help=True,
@@ -103,6 +99,11 @@ def train(
         ),
     ] = 4,
 ):
+    # lazy import to save time when user just prompts for help
+    from morphospaces.training.multiscale_skeletonization import (
+        train as train_func,
+    )
+
     """Train the multiscale skeletonization network."""
     train_func(
         train_data_pattern=train_data_pattern,
