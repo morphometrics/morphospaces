@@ -59,12 +59,16 @@ def sample_fixed_points(features, labels):
     sample_points = torch.from_numpy(
         np.array(
             [
-                [29, 53, 13],
-                [29, 54, 40],
-                [29, 55, 50],
-                [29, 27, 39],
-                [29, 18, 41],
-                [29, 10, 40],
+                [12, 10, 7],
+                [12, 8, 14],
+                [14, 10, 7],
+                [14, 8, 15],
+                [18, 10, 7],
+                [35, 35, 35],
+                [35, 35, 40],
+                [28, 35, 38],
+                [38, 35, 32],
+                [35, 30, 40],
             ],
             dtype=int,
         ),
@@ -77,7 +81,13 @@ def sample_fixed_points(features, labels):
     ]
     sampled_features = sampled_features.permute(0, 2, 1)
     sampled_labels = sampled_labels.permute(0, 2, 1)
+    reshaped_sampled_features = sampled_features.reshape(
+        -1, sampled_features.shape[2]
+    )
+    reshaped_sampled_labels = sampled_labels.reshape(
+        -1, sampled_labels.shape[2]
+    )
     return {
-        "feats": sampled_features.reshape(-1, sampled_features.shape[2]),
-        "labels": sampled_labels.reshape(-1, sampled_labels.shape[2]),
+        "feats": reshaped_sampled_features,
+        "labels": reshaped_sampled_labels,
     }
