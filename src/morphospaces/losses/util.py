@@ -81,3 +81,40 @@ def sample_fixed_points(features, labels):
         "feats": sampled_features.reshape(-1, sampled_features.shape[2]),
         "labels": sampled_labels.reshape(-1, sampled_labels.shape[2]),
     }
+
+
+def cosine_similarities(features_dict):
+    """ 
+    Compute the mean cosine similarity between the features of the same class
+    and the mean cosine similarity between the features of different classes.
+
+    Args:
+    - features: torch.Tensor, shape: [N, D]
+    - labels: torch.Tensor, shape: [B]
+    """
+    features = features_dict["feats"]
+    labels = features_dict["labels"]
+
+    unique_labels = torch.unique(labels)
+    
+    # normalize the features
+    features = features / features.norm(dim=1, keepdim=True)
+
+    pos_similarities = []
+    neg_similarities = []
+
+    for label in unique_labels:
+        label_feats_pos = features[labels == label]
+        label_feats_neg = features[labels != label]
+
+        # compute the cosine similarity
+        sim_pos = torch.mm(label_feats_pos, label_feats_pos.t())
+        sim_neg = torch.mm(label_feats_pos, label_feats_neg.t())
+
+        mean_sim_pos = sim_pos.mean()
+        mean_sim_neg = sim_neg.mean()
+
+        pos_similarities.append(mean_sim_pos)
+        neg_similarities.append(mean_sim_neg)
+
+    return torch.mean(torch.stack(pos_similarities)), torch.mean(torch.stack(neg_similarities))
