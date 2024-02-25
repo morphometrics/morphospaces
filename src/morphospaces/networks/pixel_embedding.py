@@ -5,7 +5,10 @@ import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from morphospaces.losses.embedding import MultiPosConLoss
-from morphospaces.losses.util import sample_fixed_points, cosine_similarities
+from morphospaces.losses.util import (
+    cosine_similarities,
+    sample_random_features,
+)
 from morphospaces.networks._components.unet_model import ResidualUNet3D
 
 
@@ -27,7 +30,8 @@ class PixelEmbedding(pl.LightningModule):
         """The PixelEmbedding model.
 
         Parameters
-        ----------
+        ----------clear
+
         in_channels : int
             The number of input channels.
         n_layers : int
@@ -110,7 +114,11 @@ class PixelEmbedding(pl.LightningModule):
         embeddings = self._model(images)
 
         # compute the loss
-        loss, cosine_sim_pos, cosine_sim_neg = self._compute_loss(embeddings, labels)
+        loss, cosine_sim_pos, cosine_sim_neg = self._compute_loss(
+            embeddings, labels
+        )
+
+        print(f"pos: {cosine_sim_pos}, neg: {cosine_sim_neg}")
 
         # log the loss and learning rate
         self.log("training_loss", loss, batch_size=len(images), prog_bar=True)
@@ -132,10 +140,17 @@ class PixelEmbedding(pl.LightningModule):
         embeddings = self._model(images)
 
         # compute the loss
-        loss, cosine_sim_pos, cosine_sim_neg = self._compute_loss(embeddings, labels)
+        loss, cosine_sim_pos, cosine_sim_neg = self._compute_loss(
+            embeddings, labels
+        )
 
         # log the loss and learning rate
-        val_outputs = {"val_loss": loss, "val_number": len(images), "cosine_sim_pos": cosine_sim_pos, "cosine_sim_neg": cosine_sim_neg}
+        val_outputs = {
+            "val_loss": loss,
+            "val_number": len(images),
+            "cosine_sim_pos": cosine_sim_pos,
+            "cosine_sim_neg": cosine_sim_neg,
+        }
         self.validation_step_outputs.append(val_outputs)
 
         return val_outputs
@@ -152,8 +167,12 @@ class PixelEmbedding(pl.LightningModule):
         mean_val_cosine_sim_pos = val_cosine_sim_pos / num_items
         mean_val_cosine_sim_neg = val_cosine_sim_neg / num_items
         self.log("val_loss", mean_val_loss, batch_size=num_items)
-        self.log("val_cosine_sim_pos", mean_val_cosine_sim_pos, batch_size=num_items)
-        self.log("val_cosine_sim_neg", mean_val_cosine_sim_neg, batch_size=num_items)
+        self.log(
+            "val_cosine_sim_pos", mean_val_cosine_sim_pos, batch_size=num_items
+        )
+        self.log(
+            "val_cosine_sim_neg", mean_val_cosine_sim_neg, batch_size=num_items
+        )
         self.validation_step_outputs.clear()  # free memory
         return {"val_loss": mean_val_loss}
 
@@ -175,14 +194,14 @@ class PixelEmbedding(pl.LightningModule):
             The computed loss.
         """
         # sample the embeddings and loss
-        # sampled_features = sample_random_features(
-        # features=embeddings,
-        # labels=labels,
-        # num_samples_per_class=self.hparams.n_samples_per_class
-        # )
-        sampled_features = sample_fixed_points(
-            features=embeddings, labels=labels
+        sampled_features = sample_random_features(
+            features=embeddings,
+            labels=labels,
+            num_samples_per_class=self.hparams.n_samples_per_class,
         )
+        # sampled_features = sample_fixed_points(
+        #     features=embeddings, labels=labels
+        # )
         cosine_sim_pos, cosine_sim_neg = cosine_similarities(sampled_features)
 
         # return the loss and cosine similarities

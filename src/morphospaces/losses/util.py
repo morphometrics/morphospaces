@@ -94,7 +94,7 @@ def sample_fixed_points(features, labels):
 
 
 def cosine_similarities(features_dict):
-    """ 
+    """
     Compute the mean cosine similarity between the features of the same class
     and the mean cosine similarity between the features of different classes.
 
@@ -105,26 +105,44 @@ def cosine_similarities(features_dict):
     features = features_dict["feats"]
     labels = features_dict["labels"]
 
-    unique_labels = torch.unique(labels)
-    
-    # normalize the features
+    # unique_labels = torch.unique(labels)
+
+    # mask of positives without the diagonal
+    positive_mask = torch.eq(
+        labels.view(-1, 1), labels.contiguous().view(1, -1)
+    )
+    self_mask = torch.eye(features.shape[0], device=features.device)
+    positive_mask.masked_fill(self_mask.bool(), 0)
+
+    # mask of negatives without the diagonal
+    negative_mask = torch.logical_not(positive_mask)
+
+    # normalize the features and compute similarity
     features = features / features.norm(dim=1, keepdim=True)
+    similarities = torch.mm(features, features.t())
 
-    pos_similarities = []
-    neg_similarities = []
+    positive_similarities = similarities[positive_mask].mean()
+    negative_similarities = similarities[negative_mask].mean()
 
-    for label in unique_labels:
-        label_feats_pos = features[labels == label]
-        label_feats_neg = features[labels != label]
+    return positive_similarities, negative_similarities
 
-        # compute the cosine similarity
-        sim_pos = torch.mm(label_feats_pos, label_feats_pos.t())
-        sim_neg = torch.mm(label_feats_pos, label_feats_neg.t())
-
-        mean_sim_pos = sim_pos.mean()
-        mean_sim_neg = sim_neg.mean()
-
-        pos_similarities.append(mean_sim_pos)
-        neg_similarities.append(mean_sim_neg)
-
-    return torch.mean(torch.stack(pos_similarities)), torch.mean(torch.stack(neg_similarities))
+    # pos_similarities = []
+    # neg_similarities = []
+    #
+    # for label in unique_labels:
+    #     label_mask = torch.squeeze(labels == label)
+    #     label_feats_pos = features[label_mask, :]
+    #     label_feats_neg = features[label_mask, :]
+    #
+    #     # compute the cosine similarity
+    #     sim_pos = torch.mm(label_feats_pos, label_feats_pos.t())
+    #     sim_neg = torch.mm(label_feats_pos, label_feats_neg.t())
+    #
+    #     mean_sim_pos = sim_pos.mean()
+    #     mean_sim_neg = sim_neg.mean()
+    #
+    #     pos_similarities.append(mean_sim_pos)
+    #     neg_similarities.append(mean_sim_neg)
+    #
+    # return torch.mean(torch.stack(pos_similarities)),
+    #    torch.mean(torch.stack(neg_similarities))
