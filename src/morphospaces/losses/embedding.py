@@ -43,8 +43,6 @@ class MultiPosConLoss(torch.nn.Module):
             .float()
             .to(device)
         )
-        # mask = torch.eq(labels.view(-1, 1),
-        #                 labels.contiguous().view(1, -1)).float()
 
         # mask out the diagonal
         self.logits_mask = torch.scatter(
@@ -53,12 +51,6 @@ class MultiPosConLoss(torch.nn.Module):
             torch.arange(mask.shape[0]).view(-1, 1).to(device),
             0,
         )
-        # self.logits_mask = torch.scatter(
-        #     torch.ones_like(mask),
-        #     1,
-        #     torch.arange(mask.shape[0]).view(-1, 1),
-        #     0
-        # )
         self.mask = mask * self.logits_mask
 
         mask = self.mask
@@ -77,3 +69,81 @@ class MultiPosConLoss(torch.nn.Module):
         loss = compute_cross_entropy(p, logits)
 
         return loss
+
+    class NCELoss(torch.nn.Module):
+        """NCE contrastive loss from Wang et al., 2021
+
+        See Equation 3 in https://arxiv.org/pdf/2101.11939.pdf
+        """
+
+        def __init__(self, temperature: float):
+            super().__init__()
+            self.temperature = temperature
+
+        def forward(
+            self,
+            predicted_embeddings: torch.Tensor,
+            labels: torch.Tensor,
+            contrastive_embeddings: torch.Tensor,
+            contrastive_labels: torch.Tensor,
+        ):
+            """Compute the loss.
+
+            Parameters
+            ----------
+            predicted_embeddings : torch.Tensor
+                (N, D) array containing the embeddings predicted by the in
+                the forward pass where N is the number of embeddings
+                and D is the dimension of the embeddings.
+            labels : torch.Tensor
+                (N,) array containing the class labels associated with
+                the predicted_embeddings.
+            contrastive_embeddings : torch.Tensor
+                (M, D) array containing the embeddings to compare the
+                predicted embeddings to where M is the number of
+                contrastive_embeddings and D is the dimension of
+                the embeddings.
+            contrastive_labels : torch.Tensor
+                (M,) array containing the class labels associated with
+                the contrastive_embeddings.
+
+            Returns
+            -------
+            The computed loss.
+            """
+
+            # make the masks
+            positive_mask = (
+                torch.eq(labels, contrastive_labels.T).float().cuda()
+            )
+            negative_mask = 1 - positive_mask
+
+            # make a positive mask without the diagonal
+            # I don't think this is necessary when the contrastive_embeddings
+            # are not the same as predicted_embeddings
+            # (i.e., there aren't any "self" embedding comparison
+            # therefor just copying as a placeholder
+            logits_mask = positive_mask
+
+            # compute the logits (numerator)
+            logits = torch.div(
+                torch.matmul(predicted_embeddings, contrastive_embeddings.T),
+                self.temperature,
+            )
+            logits = stablize_logits(logits)
+
+            # compute the denominator
+            negative_logits = torch.exp(logits) * negative_mask
+            negative_logits = negative_logits.sum(1, keepdim=True)
+            exp_positive_logits = torch.exp(logits)
+            denominator = torch.log(exp_positive_logits + negative_logits)
+
+            # compute the loss
+            log_probability = logits - denominator
+            mean_log_prob_pos = (logits_mask * log_probability).sum(
+                1
+            ) / logits_mask.sum(1)
+            loss = (
+                -(self.temperature / self.base_temperature) * mean_log_prob_pos
+            )
+            return loss.mean()
