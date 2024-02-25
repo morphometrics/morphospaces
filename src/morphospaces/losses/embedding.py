@@ -76,9 +76,10 @@ class MultiPosConLoss(torch.nn.Module):
         See Equation 3 in https://arxiv.org/pdf/2101.11939.pdf
         """
 
-        def __init__(self, temperature: float):
+        def __init__(self, temperature: float, base_temperature: float):
             super().__init__()
             self.temperature = temperature
+            self.base_temperature = base_temperature
 
         def forward(
             self,
