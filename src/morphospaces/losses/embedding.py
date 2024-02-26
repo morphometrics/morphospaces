@@ -123,11 +123,11 @@ class MultiPosConLoss(torch.nn.Module):
             )
             negative_mask = 1 - positive_mask
 
-            # make a positive mask without the diagonal
+            # make a positive mask without the diagonal if requested
             # I don't think this is necessary when the contrastive_embeddings
             # are not the same as predicted_embeddings
             # (i.e., there aren't any "self" embedding comparison
-            # therefor just copying as a placeholder
+            # therefore just copying as a placeholder
             if mask_diagonal:
                 logits_mask = torch.ones_like(positive_mask).scatter_(
                     1,
