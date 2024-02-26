@@ -118,8 +118,6 @@ class PixelEmbedding(pl.LightningModule):
             embeddings, labels
         )
 
-        print(f"pos: {cosine_sim_pos}, neg: {cosine_sim_neg}")
-
         # log the loss and learning rate
         self.log("training_loss", loss, batch_size=len(images), prog_bar=True)
         self.log("lr", self.hparams.learning_rate, batch_size=len(images))
