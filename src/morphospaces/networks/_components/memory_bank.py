@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import torch
 
@@ -85,5 +85,21 @@ class PixelMemoryBank:
                 ending_index
             ) % self.n_embeddings_per_class
 
-    def get_embeddings(self) -> torch.Tensor:
-        pass
+    def get_embeddings(self) -> Tuple[torch.Tensor, torch.tensor]:
+        embeddings = []
+        labels = []
+        for label_index, label_value in self.label_mapping.items():
+            # get the embeddings that are not nan (i.e., not initialized)
+            label_embedding = self.embeddings[label_index, :, :]
+            nan_rows = torch.any(label_embedding.isnan(), dim=1)
+            label_embedding = label_embedding[~nan_rows]
+            embeddings.append(label_embedding)
+
+            # get the
+            n_label_embeddings = label_embedding.shape[0]
+            labels.append(
+                label_value
+                * torch.ones((n_label_embeddings,), dtype=torch.int32)
+            )
+
+        return torch.cat(embeddings, dim=0), torch.cat(labels, dim=0)
