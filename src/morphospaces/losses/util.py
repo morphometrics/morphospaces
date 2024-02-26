@@ -47,11 +47,7 @@ def sample_random_features(features, labels, num_samples_per_class=10):
     sampled_feats = torch.cat(sampled_feats, dim=0)
     sampled_labels = torch.cat(sampled_labels, dim=0)
 
-    output = {}
-    output["feats"] = sampled_feats
-    output["labels"] = sampled_labels
-
-    return output
+    return sampled_feats, sampled_labels
 
 
 def sample_fixed_points(features, labels):
@@ -87,62 +83,33 @@ def sample_fixed_points(features, labels):
     reshaped_sampled_labels = sampled_labels.reshape(
         -1, sampled_labels.shape[2]
     )
-    return {
-        "feats": reshaped_sampled_features,
-        "labels": reshaped_sampled_labels,
-    }
+    return reshaped_sampled_features, reshaped_sampled_labels
 
 
-def cosine_similarities(features_dict):
+def cosine_similarities(embeddings: torch.Tensor, labels: torch.Tensor):
     """
     Compute the mean cosine similarity between the features of the same class
     and the mean cosine similarity between the features of different classes.
 
     Args:
-    - features: torch.Tensor, shape: [N, D]
+    - embeddings: torch.Tensor, shape: [N, D]
     - labels: torch.Tensor, shape: [B]
     """
-    features = features_dict["feats"]
-    labels = features_dict["labels"]
-
-    # unique_labels = torch.unique(labels)
-
     # mask of positives without the diagonal
     positive_mask = torch.eq(
         labels.view(-1, 1), labels.contiguous().view(1, -1)
     )
-    self_mask = torch.eye(features.shape[0], device=features.device)
+    self_mask = torch.eye(embeddings.shape[0], device=embeddings.device)
     positive_mask.masked_fill(self_mask.bool(), 0)
 
     # mask of negatives without the diagonal
     negative_mask = torch.logical_not(positive_mask)
 
     # normalize the features and compute similarity
-    features = features / features.norm(dim=1, keepdim=True)
-    similarities = torch.mm(features, features.t())
+    embeddings = embeddings / embeddings.norm(dim=1, keepdim=True)
+    similarities = torch.mm(embeddings, embeddings.t())
 
     positive_similarities = similarities[positive_mask].mean()
     negative_similarities = similarities[negative_mask].mean()
 
     return positive_similarities, negative_similarities
-
-    # pos_similarities = []
-    # neg_similarities = []
-    #
-    # for label in unique_labels:
-    #     label_mask = torch.squeeze(labels == label)
-    #     label_feats_pos = features[label_mask, :]
-    #     label_feats_neg = features[label_mask, :]
-    #
-    #     # compute the cosine similarity
-    #     sim_pos = torch.mm(label_feats_pos, label_feats_pos.t())
-    #     sim_neg = torch.mm(label_feats_pos, label_feats_neg.t())
-    #
-    #     mean_sim_pos = sim_pos.mean()
-    #     mean_sim_neg = sim_neg.mean()
-    #
-    #     pos_similarities.append(mean_sim_pos)
-    #     neg_similarities.append(mean_sim_neg)
-    #
-    # return torch.mean(torch.stack(pos_similarities)),
-    #    torch.mean(torch.stack(neg_similarities))

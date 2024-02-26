@@ -1,10 +1,10 @@
-from typing import Dict
+from typing import Dict, Tuple
 
 import pytorch_lightning as pl
 import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from morphospaces.losses.embedding import MultiPosConLoss
+from morphospaces.losses.embedding import NCELoss
 from morphospaces.losses.util import (
     cosine_similarities,
     sample_random_features,
@@ -70,7 +70,7 @@ class PixelEmbedding(pl.LightningModule):
             num_levels=n_layers,
             conv_padding=1,
         )
-        self.loss = MultiPosConLoss(temperature=self.hparams.loss_temperature)
+        self.loss = NCELoss(temperature=self.hparams.loss_temperature)
 
         # parameters to track training
         self.iteration_count = 0
@@ -178,7 +178,7 @@ class PixelEmbedding(pl.LightningModule):
 
     def _compute_loss(
         self, embeddings: torch.Tensor, labels: torch.Tensor
-    ) -> float:
+    ) -> Tuple[float, float, float]:
         """Compute the contrastive loss for the embeddings.
 
         Parameters
@@ -194,7 +194,7 @@ class PixelEmbedding(pl.LightningModule):
             The computed loss.
         """
         # sample the embeddings and loss
-        sampled_features = sample_random_features(
+        sampled_embeddings, sampled_labels = sample_random_features(
             features=embeddings,
             labels=labels,
             num_samples_per_class=self.hparams.n_samples_per_class,
@@ -202,7 +202,16 @@ class PixelEmbedding(pl.LightningModule):
         # sampled_features = sample_fixed_points(
         #     features=embeddings, labels=labels
         # )
-        cosine_sim_pos, cosine_sim_neg = cosine_similarities(sampled_features)
+        cosine_sim_pos, cosine_sim_neg = cosine_similarities(
+            embeddings=sampled_embeddings, labels=sampled_labels
+        )
+        loss = self.loss(
+            predicted_embeddings=sampled_embeddings,
+            labels=sampled_labels,
+            contrastive_embeddings=sampled_embeddings,
+            contrastive_labels=sampled_labels,
+            mask_diagonal=True,
+        )
 
         # return the loss and cosine similarities
-        return self.loss(sampled_features), cosine_sim_pos, cosine_sim_neg
+        return loss, cosine_sim_pos, cosine_sim_neg
