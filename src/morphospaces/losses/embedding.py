@@ -70,93 +70,105 @@ class MultiPosConLoss(torch.nn.Module):
 
         return loss
 
-    class NCELoss(torch.nn.Module):
-        """NCE contrastive loss from Wang et al., 2021
 
-        See Equation 3 in https://arxiv.org/pdf/2101.11939.pdf
+class NCELoss(torch.nn.Module):
+    """NCE contrastive loss from Wang et al., 2021
+
+    See Equation 3 in https://arxiv.org/pdf/2101.11939.pdf
+    """
+
+    def __init__(self, temperature: float):
+        super().__init__()
+        self.temperature = temperature
+
+    def forward(
+        self,
+        predicted_embeddings: torch.Tensor,
+        labels: torch.Tensor,
+        contrastive_embeddings: torch.Tensor,
+        contrastive_labels: torch.Tensor,
+        mask_diagonal: bool = False,
+    ):
+        """Compute the loss.
+
+        Parameters
+        ----------
+        predicted_embeddings : torch.Tensor
+            (N, D) array containing the embeddings predicted by the in
+            the forward pass where N is the number of embeddings
+            and D is the dimension of the embeddings.
+        labels : torch.Tensor
+            (N,) array containing the class labels associated with
+            the predicted_embeddings.
+        contrastive_embeddings : torch.Tensor
+            (M, D) array containing the embeddings to compare the
+            predicted embeddings to where M is the number of
+            contrastive_embeddings and D is the dimension of
+            the embeddings.
+        contrastive_labels : torch.Tensor
+            (M,) array containing the class labels associated with
+            the contrastive_embeddings.
+
+        Returns
+        -------
+        The computed loss.
         """
-
-        def __init__(self, temperature: float, base_temperature: float):
-            super().__init__()
-            self.temperature = temperature
-
-        def forward(
-            self,
-            predicted_embeddings: torch.Tensor,
-            labels: torch.Tensor,
-            contrastive_embeddings: torch.Tensor,
-            contrastive_labels: torch.Tensor,
-            mask_diagonal: bool = False,
-        ):
-            """Compute the loss.
-
-            Parameters
-            ----------
-            predicted_embeddings : torch.Tensor
-                (N, D) array containing the embeddings predicted by the in
-                the forward pass where N is the number of embeddings
-                and D is the dimension of the embeddings.
-            labels : torch.Tensor
-                (N,) array containing the class labels associated with
-                the predicted_embeddings.
-            contrastive_embeddings : torch.Tensor
-                (M, D) array containing the embeddings to compare the
-                predicted embeddings to where M is the number of
-                contrastive_embeddings and D is the dimension of
-                the embeddings.
-            contrastive_labels : torch.Tensor
-                (M,) array containing the class labels associated with
-                the contrastive_embeddings.
-
-            Returns
-            -------
-            The computed loss.
-            """
-            device = (
-                torch.device("cuda")
-                if predicted_embeddings.is_cuda
-                else torch.device("cpu")
+        device = (
+            torch.device("cuda")
+            if predicted_embeddings.is_cuda
+            else torch.device("cpu")
+        )
+        # make the masks
+        positive_mask = (
+            torch.eq(
+                labels.view(-1, 1), contrastive_labels.contiguous().view(1, -1)
             )
-            # make the masks
-            positive_mask = (
-                torch.eq(labels, contrastive_labels.T).float().cuda()
+            .float()
+            .to(device)
+        )
+        negative_mask = 1 - positive_mask
+
+        # make a positive mask without the diagonal if requested
+        # I don't think this is necessary when the contrastive_embeddings
+        # are not the same as predicted_embeddings
+        # (i.e., there aren't any "self" embedding comparison
+        # therefore just copying as a placeholder
+        if mask_diagonal:
+            logits_mask = torch.scatter(
+                torch.ones_like(positive_mask),
+                1,
+                torch.arange(predicted_embeddings.shape[0])
+                .view(-1, 1)
+                .to(device),
+                0,
             )
-            negative_mask = 1 - positive_mask
 
-            # make a positive mask without the diagonal if requested
-            # I don't think this is necessary when the contrastive_embeddings
-            # are not the same as predicted_embeddings
-            # (i.e., there aren't any "self" embedding comparison
-            # therefore just copying as a placeholder
-            if mask_diagonal:
-                logits_mask = torch.ones_like(positive_mask).scatter_(
-                    1,
-                    torch.arange(predicted_embeddings.shape[0])
-                    .view(-1, 1)
-                    .to(device),
-                    0,
-                )
+        else:
+            logits_mask = positive_mask
 
-            else:
-                logits_mask = positive_mask
+        # normalize the embeddings
+        predicted_embeddings = F.normalize(predicted_embeddings, dim=-1, p=2)
+        contrastive_embeddings = F.normalize(
+            contrastive_embeddings, dim=-1, p=2
+        )
 
-            # compute the logits (numerator)
-            logits = torch.div(
-                torch.matmul(predicted_embeddings, contrastive_embeddings.T),
-                self.temperature,
-            )
-            logits = stablize_logits(logits)
+        # compute the logits (numerator)
+        logits = torch.div(
+            torch.matmul(predicted_embeddings, contrastive_embeddings.T),
+            self.temperature,
+        )
+        logits = stablize_logits(logits)
 
-            # compute the denominator
-            negative_logits = torch.exp(logits) * negative_mask
-            negative_logits = negative_logits.sum(1, keepdim=True)
-            exp_positive_logits = torch.exp(logits)
-            denominator = torch.log(exp_positive_logits + negative_logits)
+        # compute the denominator
+        negative_logits = torch.exp(logits) * negative_mask
+        negative_logits = negative_logits.sum(1, keepdim=True)
+        exp_positive_logits = torch.exp(logits)
+        denominator = torch.log(exp_positive_logits + negative_logits)
 
-            # compute the loss
-            log_probability = logits - denominator
-            mean_log_prob_pos = (logits_mask * log_probability).sum(
-                1
-            ) / logits_mask.sum(1)
-            loss = -1 * mean_log_prob_pos
-            return loss.mean()
+        # compute the loss
+        log_probability = logits - denominator
+        mean_log_prob_pos = (logits_mask * log_probability).sum(
+            1
+        ) / logits_mask.sum(1)
+        loss = -1 * mean_log_prob_pos
+        return loss.mean()
