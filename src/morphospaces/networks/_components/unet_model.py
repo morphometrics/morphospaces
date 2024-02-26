@@ -26,10 +26,6 @@ class BaseUNet3D(nn.Module):
             level of the encoder;
             if it's an integer the number of feature maps is given
             by the geometric progression: f_maps ^ k, k=1,2,3,4
-        final_sigmoid (bool): if True apply element-wise nn.Sigmoid
-            after the final 1x1 convolution, otherwise apply nn.Softmax.
-            In effect only if `self.training == False`,
-            i.e. during validation/testing
         basic_module: basic model for the encoder/decoder
             (DoubleConv, ResNetBlock, ....)
         layer_order (string): determines the order of layers in
@@ -39,10 +35,6 @@ class BaseUNet3D(nn.Module):
         num_groups (int): number of groups for the GroupNorm
         num_levels (int): number of levels in the encoder/decoder path
             (applied only if f_maps is an int) default: 4
-        is_segmentation (bool): if True and the model is in eval mode,
-            Sigmoid/Softmax normalization is applied
-            after the final convolution; if False (regression problem)
-            the normalization layer is skipped
         conv_kernel_size (int or tuple): size of the convolving
             kernel in the basic_module
         pool_kernel_size (int or tuple): the size of the window
