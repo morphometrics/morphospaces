@@ -79,7 +79,6 @@ class MultiPosConLoss(torch.nn.Module):
         def __init__(self, temperature: float, base_temperature: float):
             super().__init__()
             self.temperature = temperature
-            self.base_temperature = base_temperature
 
         def forward(
             self,
@@ -87,6 +86,7 @@ class MultiPosConLoss(torch.nn.Module):
             labels: torch.Tensor,
             contrastive_embeddings: torch.Tensor,
             contrastive_labels: torch.Tensor,
+            mask_diagonal: bool = False,
         ):
             """Compute the loss.
 
@@ -124,7 +124,17 @@ class MultiPosConLoss(torch.nn.Module):
             # are not the same as predicted_embeddings
             # (i.e., there aren't any "self" embedding comparison
             # therefor just copying as a placeholder
-            logits_mask = positive_mask
+            if mask_diagonal:
+                logits_mask = torch.ones_like(positive_mask).scatter_(
+                    1,
+                    torch.arange(predicted_embeddings.shape[0])
+                    .view(-1, 1)
+                    .cuda(),
+                    0,
+                )
+
+            else:
+                logits_mask = positive_mask
 
             # compute the logits (numerator)
             logits = torch.div(
@@ -144,7 +154,5 @@ class MultiPosConLoss(torch.nn.Module):
             mean_log_prob_pos = (logits_mask * log_probability).sum(
                 1
             ) / logits_mask.sum(1)
-            loss = (
-                -(self.temperature / self.base_temperature) * mean_log_prob_pos
-            )
+            loss = -1 * mean_log_prob_pos
             return loss.mean()
