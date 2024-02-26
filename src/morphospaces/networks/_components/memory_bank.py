@@ -95,7 +95,7 @@ class PixelMemoryBank:
             label_embedding = label_embedding[~nan_rows]
             embeddings.append(label_embedding)
 
-            # get the
+            # get the label values
             n_label_embeddings = label_embedding.shape[0]
             labels.append(
                 label_value
