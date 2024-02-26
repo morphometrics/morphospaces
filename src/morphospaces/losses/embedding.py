@@ -112,7 +112,11 @@ class MultiPosConLoss(torch.nn.Module):
             -------
             The computed loss.
             """
-
+            device = (
+                torch.device("cuda")
+                if predicted_embeddings.is_cuda
+                else torch.device("cpu")
+            )
             # make the masks
             positive_mask = (
                 torch.eq(labels, contrastive_labels.T).float().cuda()
@@ -129,7 +133,7 @@ class MultiPosConLoss(torch.nn.Module):
                     1,
                     torch.arange(predicted_embeddings.shape[0])
                     .view(-1, 1)
-                    .cuda(),
+                    .to(device),
                     0,
                 )
 
