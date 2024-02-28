@@ -32,6 +32,7 @@ class StandardHDF5Dataset(BaseTiledDataset):
         patch_filter_key: str = "label",
         patch_threshold: float = 0.6,
         patch_slack_acceptance=0.01,
+        store_unique_label_values: bool = False,
     ):
         super().__init__(
             file_path=file_path,
@@ -43,6 +44,7 @@ class StandardHDF5Dataset(BaseTiledDataset):
             patch_filter_key=patch_filter_key,
             patch_threshold=patch_threshold,
             patch_slack_acceptance=patch_slack_acceptance,
+            store_unique_label_values=store_unique_label_values,
         )
 
     @staticmethod
@@ -76,7 +78,8 @@ class LazyHDF5Dataset(BaseTiledDataset):
         patch_filter_ignore_index: Tuple[int, ...] = (0,),
         patch_filter_key: str = "label",
         patch_threshold: float = 0.6,
-        patch_slack_acceptance=0.01,
+        patch_slack_acceptance: float = 0.01,
+        store_unique_label_values: bool = False,
     ):
         super().__init__(
             file_path=file_path,
@@ -88,9 +91,8 @@ class LazyHDF5Dataset(BaseTiledDataset):
             patch_filter_key=patch_filter_key,
             patch_threshold=patch_threshold,
             patch_slack_acceptance=patch_slack_acceptance,
+            store_unique_label_values=store_unique_label_values,
         )
-
-        # logger.info("Using modified HDF5Dataset!")
 
     @staticmethod
     def get_array(file_path, internal_path):
