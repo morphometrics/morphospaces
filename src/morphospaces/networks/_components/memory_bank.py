@@ -33,11 +33,12 @@ class PixelMemoryBank:
         self.n_labels = len(self.label_mapping)
 
         # current index to start sampling from
-        self.current_index = torch.zeros((self.n_labels,))
+        self._current_index = torch.zeros((self.n_labels,))
 
         # pre-allocate the embeddings and initialize
-        self._embeddings = torch.zeros(
-            (self.n_labels, self.n_embeddings_per_class, self.n_dimensions)
+        self._embeddings = torch.full(
+            (self.n_labels, self.n_embeddings_per_class, self.n_dimensions),
+            torch.nan,
         )
         self._initialize_memory_bank()
 
@@ -49,46 +50,60 @@ class PixelMemoryBank:
     def label_mapping(self) -> Dict[int, int]:
         return self._label_mapping
 
+    @property
+    def current_index(self) -> torch.Tensor:
+        return self._current_index
+
     def _initialize_memory_bank(self):
         pass
 
     def set_embeddings(
-        self, embeddings: torch.Tensor, labels: torch.Tensor, label_value: int
+        self, embeddings: torch.Tensor, labels: torch.Tensor
     ) -> None:
-        # Get the index for the label value in the stored embeddings
-        label_index = self.label_mapping[label_value]
+        unique_label_values = torch.unique(labels)
 
-        # Get the embeddings to be stored
-        embeddings_in_label = embeddings[labels == label_value, :]
-        n_embeddings = embeddings_in_label.shape[0]
-        random_sampling_indices = torch.randperm(n_embeddings)
-        n_embeddings_to_take = min(n_embeddings, self.n_embeddings_to_update)
-        embeddings_to_store = embeddings_in_label[
-            random_sampling_indices[:n_embeddings_to_take], :
-        ]
+        for unique_label in unique_label_values:
+            # Get the index for the label value in the stored embeddings
+            label_value = int(unique_label)
+            label_index = self.label_mapping[label_value]
 
-        # Determine the start and end indices for storing
-        # the embeddings in the memory banks
-        starting_index = self.current_index[label_index]
-        ending_index = starting_index + n_embeddings_to_take
+            # Get the embeddings to be stored
+            embeddings_in_label = embeddings[labels == label_value, :]
+            n_embeddings = embeddings_in_label.shape[0]
+            random_sampling_indices = torch.randperm(n_embeddings)
+            n_embeddings_to_take = min(
+                n_embeddings, self.n_embeddings_to_update
+            )
+            embeddings_to_store = embeddings_in_label[
+                random_sampling_indices[:n_embeddings_to_take], :
+            ]
 
-        if ending_index >= self.n_embeddings_per_class:
-            self.embeddings[
-                label_index, -n_embeddings:, :
-            ] = torch.nn.functional.normalize(embeddings_to_store, p=2, dim=1)
-            self.current_index[label_index] = 0
-        else:
-            self.embeddings[
-                label_index, starting_index:ending_index, :
-            ] = torch.nn.functional.normalize(embeddings_to_store, p=2, dim=1)
-            self.current_index[label_index] = (
-                ending_index
-            ) % self.n_embeddings_per_class
+            # Determine the start and end indices for storing
+            # the embeddings in the memory banks
+            starting_index = int(self.current_index[label_index])
+            ending_index = starting_index + n_embeddings_to_take
+
+            if ending_index >= self.n_embeddings_per_class:
+                self._embeddings[
+                    label_index, -n_embeddings:, :
+                ] = torch.nn.functional.normalize(
+                    embeddings_to_store, p=2, dim=1
+                )
+                self.current_index[label_index] = 0
+            else:
+                self._embeddings[
+                    label_index, starting_index:ending_index, :
+                ] = torch.nn.functional.normalize(
+                    embeddings_to_store, p=2, dim=1
+                )
+                self.current_index[label_index] = (
+                    ending_index
+                ) % self.n_embeddings_per_class
 
     def get_embeddings(self) -> Tuple[torch.Tensor, torch.tensor]:
         embeddings = []
         labels = []
-        for label_index, label_value in self.label_mapping.items():
+        for label_value, label_index in self.label_mapping.items():
             # get the embeddings that are not nan (i.e., not initialized)
             label_embedding = self.embeddings[label_index, :, :]
             nan_rows = torch.any(label_embedding.isnan(), dim=1)
