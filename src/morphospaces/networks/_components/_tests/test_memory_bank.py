@@ -1,7 +1,10 @@
 import torch
 import torch.nn.functional as F
 
-from morphospaces.networks._components.memory_bank import PixelMemoryBank
+from morphospaces.networks._components.memory_bank import (
+    LabelMemoryBank,
+    PixelMemoryBank,
+)
 
 
 def test_pixel_memory_bank():
@@ -115,3 +118,88 @@ def test_pixel_memory_bank_overflow():
     # check the labels were returned correctly
     expected_labels = torch.tensor(3 * [0] + 3 * [3])
     assert torch.all(retrieved_labels == expected_labels)
+
+
+def test_label_memory_bank():
+    n_embeddings_per_class = 10
+    n_dimensions = 3
+    label_values = [0, 1, 4]
+    n_label_values = len(label_values)
+    memory_bank = LabelMemoryBank(
+        n_embeddings_per_class=n_embeddings_per_class,
+        n_dimensions=n_dimensions,
+        label_values=label_values,
+    )
+
+    assert memory_bank.embeddings.shape == (
+        n_label_values,
+        n_embeddings_per_class,
+        n_dimensions,
+    )
+
+    # should be initialized with all nans
+    assert torch.all(torch.isnan(memory_bank.embeddings))
+
+    # test setting some embeddings
+    new_embeddings = torch.zeros((n_dimensions, 1, 1, 2))
+    new_embeddings[:, 0, 0, 0] = torch.tensor([0.1, 0.1, 0.1])
+    new_embeddings[:, 0, 0, 1] = torch.tensor([0.1, 0.1, 0.1])
+    label_to_set = 4
+    labels = torch.zeros((1, 1, 2), dtype=torch.int)
+    labels[:, :, :] = label_to_set
+    memory_bank.set_embeddings(new_embeddings, labels)
+    retrieved_embeddings, retrieved_labels = memory_bank.get_embeddings()
+
+    # todo add tests for actual value
+    assert retrieved_embeddings.shape == (1, n_dimensions)
+    assert torch.all(retrieved_labels == torch.tensor([label_to_set]))
+
+
+def test_label_memory_bank_overflow():
+    n_embeddings_per_class = 10
+    n_dimensions = 3
+    label_values = [0, 1, 4]
+    n_label_values = len(label_values)
+    memory_bank = LabelMemoryBank(
+        n_embeddings_per_class=n_embeddings_per_class,
+        n_dimensions=n_dimensions,
+        label_values=label_values,
+    )
+
+    assert memory_bank.embeddings.shape == (
+        n_label_values,
+        n_embeddings_per_class,
+        n_dimensions,
+    )
+
+    memory_bank._embeddings = torch.zeros(
+        (
+            n_label_values,
+            n_embeddings_per_class,
+            n_dimensions,
+        )
+    )
+    memory_bank.current_index[2] = 9
+
+    # add some new embeddings
+    new_embeddings = torch.zeros((n_dimensions, 1, 1, 2))
+    new_embeddings[:, 0, 0, 0] = torch.tensor([1, 0, 0])
+    new_embeddings[:, 0, 0, 1] = torch.tensor([1, 0, 0])
+    label_to_set = 4
+    labels = torch.zeros((1, 1, 2), dtype=torch.int)
+    labels[:, :, :] = label_to_set
+    memory_bank.set_embeddings(new_embeddings, labels)
+
+    expected_embedding = torch.zeros(
+        n_label_values,
+        n_embeddings_per_class,
+        n_dimensions,
+    )
+    expected_embedding[2, -1, :] = torch.tensor([1, 0, 0])
+    torch.testing.assert_allclose(memory_bank.embeddings, expected_embedding)
+
+    # add embeddings again, they should be added to the front of the queue
+    memory_bank.set_embeddings(new_embeddings, labels)
+
+    expected_embedding[2, 0, :] = torch.tensor([1, 0, 0])
+    torch.testing.assert_allclose(memory_bank.embeddings, expected_embedding)
