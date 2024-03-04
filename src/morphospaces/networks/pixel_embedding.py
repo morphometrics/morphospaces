@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -8,6 +8,10 @@ from morphospaces.losses.embedding import NCELoss
 from morphospaces.losses.util import (
     cosine_similarities,
     sample_random_features,
+)
+from morphospaces.networks._components.memory_bank import (
+    LabelMemoryBank,
+    PixelMemoryBank,
 )
 from morphospaces.networks._components.unet_model import ResidualUNet3D
 
@@ -26,6 +30,12 @@ class PixelEmbedding(pl.LightningModule):
         lr_scheduler_step: int = 1000,
         lr_reduction_factor: float = 0.2,
         lr_reduction_patience: int = 15,
+        memory_banks: bool = False,
+        label_values: Optional[List[int]] = None,
+        n_pixel_embeddings_per_class: int = 50,
+        n_pixel_embeddings_to_update: int = 5,
+        n_label_embeddings_per_class: int = 10,
+        n_memory_warmup: int = 1000,
     ):
         """The PixelEmbedding model.
 
@@ -71,6 +81,29 @@ class PixelEmbedding(pl.LightningModule):
             conv_padding=1,
         )
         self.loss = NCELoss(temperature=self.hparams.loss_temperature)
+
+        # make the memory banks if requested
+        if self.hparams.memory_banks:
+            if self.hparams.label_values is None:
+                raise ValueError(
+                    "If memory_banks is True, label_values must not be None."
+                )
+
+            self.pixel_memory_bank = PixelMemoryBank(
+                n_embeddings_per_class=self.hparams.n_pixel_embeddings_per_class,  # noqa E501
+                n_embeddings_to_update=self.hparams.n_pixel_embeddings_to_update,  # noqa E501
+                n_dimensions=self.hparams.n_dimensions,
+            )
+
+            self.label_memory_bank = LabelMemoryBank(
+                n_embeddings_per_class=self.hparams.n_label_embeddings_per_class,  # noqa E501
+                n_dimensions=self.hparams.n_embeedding_dims,
+                label_values=self.hparams.label_values,
+            )
+
+        else:
+            self.pixel_memory_bank = None
+            self.label_memory_bank = None
 
         # parameters to track training
         self.iteration_count = 0
@@ -203,13 +236,57 @@ class PixelEmbedding(pl.LightningModule):
         cosine_sim_pos, cosine_sim_neg = cosine_similarities(
             embeddings=sampled_embeddings, labels=sampled_labels
         )
-        loss = self.loss(
-            predicted_embeddings=sampled_embeddings,
-            labels=sampled_labels,
-            contrastive_embeddings=sampled_embeddings,
-            contrastive_labels=sampled_labels,
-            mask_diagonal=True,
-        )
+
+        if self.hparams.memory_banks:
+            if self.iteration_count < self.hparams.n_memory_warmup:
+                (
+                    stored_pixel_embeddings,
+                    stored_pixel_labels,
+                ) = self.pixel_memory_bank.get_embeddings()
+                (
+                    stored_label_embeddings,
+                    stored_label_labels,
+                ) = self.label_memory_bank.get_embeddings()
+                contrastive_embeddings = torch.cat(
+                    [stored_pixel_embeddings, stored_label_embeddings]
+                )
+                contrastive_labels = torch.cat(
+                    [stored_pixel_labels, stored_label_labels]
+                )
+
+                loss = self.loss(
+                    predicted_embeddings=sampled_embeddings,
+                    labels=sampled_labels,
+                    contrastive_embeddings=contrastive_embeddings,
+                    contrastive_labels=contrastive_labels,
+                    mask_diagonal=False,
+                )
+
+            else:
+                loss = self.loss(
+                    predicted_embeddings=sampled_embeddings,
+                    labels=sampled_labels,
+                    contrastive_embeddings=sampled_embeddings,
+                    contrastive_labels=sampled_labels,
+                    mask_diagonal=True,
+                )
+
+            # update the memory bank
+            self.pixel_memory_bank.set_embeddings(
+                embeddings=sampled_embeddings, labels=sampled_labels
+            )
+            self.label_memory_bank.set_embeddings(
+                embeddings=embeddings, labels=labels
+            )
+
+        else:
+            loss = self.loss(
+                predicted_embeddings=sampled_embeddings,
+                labels=sampled_labels,
+                contrastive_embeddings=sampled_embeddings,
+                contrastive_labels=sampled_labels,
+                mask_diagonal=True,
+            )
 
         # return the loss and cosine similarities
         return loss, cosine_sim_pos, cosine_sim_neg
