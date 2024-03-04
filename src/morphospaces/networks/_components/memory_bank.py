@@ -33,12 +33,15 @@ class PixelMemoryBank:
         self.n_labels = len(self.label_mapping)
 
         # current index to start sampling from
-        self._current_index = torch.zeros((self.n_labels,))
+        self._current_index = torch.zeros(
+            (self.n_labels,), requires_grad=False
+        )
 
         # pre-allocate the embeddings and initialize
         self._embeddings = torch.full(
             (self.n_labels, self.n_embeddings_per_class, self.n_dimensions),
             torch.nan,
+            requires_grad=False,
         )
 
     @property
@@ -81,17 +84,17 @@ class PixelMemoryBank:
 
             if ending_index >= self.n_embeddings_per_class:
                 self._embeddings[
-                    label_index, -n_embeddings:, :
+                    label_index, -n_embeddings_to_take:, :
                 ] = torch.nn.functional.normalize(
                     embeddings_to_store, p=2, dim=1
-                )
+                ).detach()
                 self.current_index[label_index] = 0
             else:
                 self._embeddings[
                     label_index, starting_index:ending_index, :
                 ] = torch.nn.functional.normalize(
                     embeddings_to_store, p=2, dim=1
-                )
+                ).detach()
                 self.current_index[label_index] = (
                     ending_index
                 ) % self.n_embeddings_per_class
@@ -134,12 +137,15 @@ class LabelMemoryBank:
         self.n_labels = len(self.label_mapping)
 
         # current index to start sampling from
-        self._current_index = torch.zeros((self.n_labels,))
+        self._current_index = torch.zeros(
+            (self.n_labels,), requires_grad=False
+        )
 
         # pre-allocate the embeddings and initialize
         self._embeddings = torch.full(
             (self.n_labels, self.n_embeddings_per_class, self.n_dimensions),
             torch.nan,
+            requires_grad=False,
         )
 
     @property
@@ -176,8 +182,10 @@ class LabelMemoryBank:
             label_index = self.label_mapping[label_value]
 
             # Get the embeddings to be stored
-            embeddings_in_label = embeddings[
-                :, labels == label_value
+            # todo generalize to batch size > 1
+            assert embeddings.shape[0] == 1, "batch size must be 1"
+            embeddings_in_label = torch.squeeze(embeddings)[
+                :, torch.squeeze(labels == label_value)
             ].moveaxis(0, -1)
             normalized_embeddings = torch.nn.functional.normalize(
                 embeddings_in_label, p=2, dim=1
@@ -190,7 +198,9 @@ class LabelMemoryBank:
 
             self._embeddings[
                 label_index, memory_bank_index, :
-            ] = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
+            ] = torch.nn.functional.normalize(
+                mean_embedding, p=2, dim=0
+            ).detach()
             self.current_index[label_index] = (
                 memory_bank_index + 1
             ) % self.n_embeddings_per_class

@@ -92,12 +92,13 @@ class PixelEmbedding(pl.LightningModule):
             self.pixel_memory_bank = PixelMemoryBank(
                 n_embeddings_per_class=self.hparams.n_pixel_embeddings_per_class,  # noqa E501
                 n_embeddings_to_update=self.hparams.n_pixel_embeddings_to_update,  # noqa E501
-                n_dimensions=self.hparams.n_dimensions,
+                n_dimensions=self.hparams.n_embedding_dims,
+                label_values=self.hparams.label_values,
             )
 
             self.label_memory_bank = LabelMemoryBank(
                 n_embeddings_per_class=self.hparams.n_label_embeddings_per_class,  # noqa E501
-                n_dimensions=self.hparams.n_embeedding_dims,
+                n_dimensions=self.hparams.n_embedding_dims,
                 label_values=self.hparams.label_values,
             )
 
@@ -238,7 +239,12 @@ class PixelEmbedding(pl.LightningModule):
         )
 
         if self.hparams.memory_banks:
-            if self.iteration_count < self.hparams.n_memory_warmup:
+            if self.iteration_count > self.hparams.n_memory_warmup:
+                device = (
+                    torch.device("cuda")
+                    if embeddings.is_cuda
+                    else torch.device("cpu")
+                )
                 (
                     stored_pixel_embeddings,
                     stored_pixel_labels,
@@ -249,10 +255,10 @@ class PixelEmbedding(pl.LightningModule):
                 ) = self.label_memory_bank.get_embeddings()
                 contrastive_embeddings = torch.cat(
                     [stored_pixel_embeddings, stored_label_embeddings]
-                )
+                ).to(device)
                 contrastive_labels = torch.cat(
                     [stored_pixel_labels, stored_label_labels]
-                )
+                ).to(device)
 
                 loss = self.loss(
                     predicted_embeddings=sampled_embeddings,
