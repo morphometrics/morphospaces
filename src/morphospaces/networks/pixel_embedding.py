@@ -92,12 +92,13 @@ class PixelEmbedding(pl.LightningModule):
             self.pixel_memory_bank = PixelMemoryBank(
                 n_embeddings_per_class=self.hparams.n_pixel_embeddings_per_class,  # noqa E501
                 n_embeddings_to_update=self.hparams.n_pixel_embeddings_to_update,  # noqa E501
-                n_dimensions=self.hparams.n_dimensions,
+                n_dimensions=self.hparams.n_embedding_dims,
+                label_values=self.hparams.label_values,
             )
 
             self.label_memory_bank = LabelMemoryBank(
                 n_embeddings_per_class=self.hparams.n_label_embeddings_per_class,  # noqa E501
-                n_dimensions=self.hparams.n_embeedding_dims,
+                n_dimensions=self.hparams.n_embedding_dims,
                 label_values=self.hparams.label_values,
             )
 
@@ -147,7 +148,7 @@ class PixelEmbedding(pl.LightningModule):
         embeddings = self._model(images)
 
         # compute the loss
-        loss, cosine_sim_pos, cosine_sim_neg = self._compute_loss(
+        loss, cosine_sim_pos, cosine_sim_neg = self._compute_train_loss(
             embeddings, labels
         )
 
@@ -171,7 +172,7 @@ class PixelEmbedding(pl.LightningModule):
         embeddings = self._model(images)
 
         # compute the loss
-        loss, cosine_sim_pos, cosine_sim_neg = self._compute_loss(
+        loss, cosine_sim_pos, cosine_sim_neg = self._compute_val_loss(
             embeddings, labels
         )
 
@@ -207,7 +208,7 @@ class PixelEmbedding(pl.LightningModule):
         self.validation_step_outputs.clear()  # free memory
         return {"val_loss": mean_val_loss}
 
-    def _compute_loss(
+    def _compute_train_loss(
         self, embeddings: torch.Tensor, labels: torch.Tensor
     ) -> Tuple[float, float, float]:
         """Compute the contrastive loss for the embeddings.
@@ -230,15 +231,17 @@ class PixelEmbedding(pl.LightningModule):
             labels=labels,
             num_samples_per_class=self.hparams.n_samples_per_class,
         )
-        # sampled_features = sample_fixed_points(
-        #     features=embeddings, labels=labels
-        # )
         cosine_sim_pos, cosine_sim_neg = cosine_similarities(
             embeddings=sampled_embeddings, labels=sampled_labels
         )
 
         if self.hparams.memory_banks:
-            if self.iteration_count < self.hparams.n_memory_warmup:
+            if self.iteration_count > self.hparams.n_memory_warmup:
+                device = (
+                    torch.device("cuda")
+                    if embeddings.is_cuda
+                    else torch.device("cpu")
+                )
                 (
                     stored_pixel_embeddings,
                     stored_pixel_labels,
@@ -249,10 +252,10 @@ class PixelEmbedding(pl.LightningModule):
                 ) = self.label_memory_bank.get_embeddings()
                 contrastive_embeddings = torch.cat(
                     [stored_pixel_embeddings, stored_label_embeddings]
-                )
+                ).to(device)
                 contrastive_labels = torch.cat(
                     [stored_pixel_labels, stored_label_labels]
-                )
+                ).to(device)
 
                 loss = self.loss(
                     predicted_embeddings=sampled_embeddings,
@@ -287,6 +290,44 @@ class PixelEmbedding(pl.LightningModule):
                 contrastive_labels=sampled_labels,
                 mask_diagonal=True,
             )
+
+        # return the loss and cosine similarities
+        return loss, cosine_sim_pos, cosine_sim_neg
+
+    def _compute_val_loss(
+        self, embeddings: torch.Tensor, labels: torch.Tensor
+    ) -> Tuple[float, float, float]:
+        """Compute the contrastive loss for the embeddings for the validation step.
+
+        Parameters
+        ----------
+        embeddings : torch.Tensor
+            (n, d) array containing the embeddings.
+        labels : torch.Tensor
+            (n,) array containing the label value for each embedding.
+
+        Returns
+        -------
+        float
+            The computed loss.
+        """
+        # sample the embeddings and loss
+        sampled_embeddings, sampled_labels = sample_random_features(
+            features=embeddings,
+            labels=labels,
+            num_samples_per_class=self.hparams.n_samples_per_class,
+        )
+        cosine_sim_pos, cosine_sim_neg = cosine_similarities(
+            embeddings=sampled_embeddings, labels=sampled_labels
+        )
+
+        loss = self.loss(
+            predicted_embeddings=sampled_embeddings,
+            labels=sampled_labels,
+            contrastive_embeddings=sampled_embeddings,
+            contrastive_labels=sampled_labels,
+            mask_diagonal=True,
+        )
 
         # return the loss and cosine similarities
         return loss, cosine_sim_pos, cosine_sim_neg

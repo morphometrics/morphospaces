@@ -166,11 +166,11 @@ class BaseTiledDataset(Dataset):
             unique_label_values = set()
             for dataset in datasets:
                 # get the unique label values across all datasets
-                unique_label_values.update(dataset.unique_label_values())
+                unique_label_values.update(dataset.unique_label_values)
 
             return ConcatDataset(datasets), list(unique_label_values)
 
-        return ConcatDataset(datasets), None
+        return ConcatDataset(datasets)
 
 
 class BaseTiledDataset2(Dataset):
