@@ -40,7 +40,7 @@ class PixelEmbedding(pl.LightningModule):
         """The PixelEmbedding model.
 
         Parameters
-        ----------clear
+        ----------
 
         in_channels : int
             The number of input channels.
