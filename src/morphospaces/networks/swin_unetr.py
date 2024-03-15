@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -7,22 +7,40 @@ from monai.metrics import DiceMetric
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from morphospaces.logging.image import log_images
+from morphospaces.losses.embedding import NCELoss
+from morphospaces.losses.util import (
+    cosine_similarities,
+    sample_random_features,
+)
 from morphospaces.networks._components.embedding_swin_unetr import (
     EmbeddingSwinUNETR,
+)
+from morphospaces.networks._components.memory_bank import (
+    LabelMemoryBank,
+    PixelMemoryBank,
 )
 
 
 class PixelEmbeddingSwinUNETR(pl.LightningModule):
     def __init__(
         self,
+        pretrained_weights_path: Optional[str] = None,
         image_key: str = "raw",
         labels_key: str = "label",
         in_channels: int = 1,
-        n_classes: int = 3,
         n_embedding_dims: int = 32,
+        loss_temperature: float = 0.1,
+        n_samples_per_class: int = 10,
+        learning_rate: float = 1e-4,
         lr_scheduler_step: int = 1000,
         lr_reduction_factor: float = 0.2,
         lr_reduction_patience: int = 15,
+        memory_banks: bool = False,
+        label_values: Optional[List[int]] = None,
+        n_pixel_embeddings_per_class: int = 50,
+        n_pixel_embeddings_to_update: int = 5,
+        n_label_embeddings_per_class: int = 10,
+        n_memory_warmup: int = 1000,
     ):
         """The pixel embedding SwinUNETR.
 
@@ -48,21 +66,59 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         lr_reduction_patience : int
             The number of steps to wait before reducing the learning rate.
             Default value is 15.
+
         """
         super().__init__()
 
         # store parameters
         self.save_hyperparameters()
 
+        n_classes = len(label_values)
         self._model = EmbeddingSwinUNETR(
+            img_size=(96, 96, 96),
             in_channels=in_channels,
             out_channels=n_classes,
             feature_size=n_embedding_dims,
         )
-        self.loss = DiceCELoss(to_onehot_y=True, softmax=True)
+
+        if pretrained_weights_path is not None:
+            # load the weights
+            weights = torch.load(pretrained_weights_path)
+
+            # update the model
+            self._model.load_from(weights)
+
+        self.segmentation_loss = DiceCELoss(to_onehot_y=True, softmax=True)
+        self.contrastive_loss = NCELoss(
+            temperature=self.hparams.loss_temperature
+        )
         self.val_metric = DiceMetric(
             include_background=True, reduction="mean", get_not_nans=False
         )
+
+        # make the memory banks if requested
+        if self.hparams.memory_banks:
+            if self.hparams.label_values is None:
+                raise ValueError(
+                    "If memory_banks is True, label_values must not be None."
+                )
+
+            self.pixel_memory_bank = PixelMemoryBank(
+                n_embeddings_per_class=self.hparams.n_pixel_embeddings_per_class,  # noqa E501
+                n_embeddings_to_update=self.hparams.n_pixel_embeddings_to_update,  # noqa E501
+                n_dimensions=self.hparams.n_embedding_dims,
+                label_values=self.hparams.label_values,
+            )
+
+            self.label_memory_bank = LabelMemoryBank(
+                n_embeddings_per_class=self.hparams.n_label_embeddings_per_class,  # noqa E501
+                n_dimensions=self.hparams.n_embedding_dims,
+                label_values=self.hparams.label_values,
+            )
+
+        else:
+            self.pixel_memory_bank = None
+            self.label_memory_bank = None
 
         # parameters to track training
         self.iteration_count = 0
@@ -102,14 +158,20 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         """
         images = batch[self.hparams.image_key]
         labels = batch[self.hparams.labels_key]
-        embeddings, logits = self._model(images)
+        embeddings, logits = self._model.training_forward(images)
 
         # compute the loss
-        loss = self.loss(logits, labels)
+        loss = self.segmentation_loss(logits, labels)
+
+        _, cosine_sim_pos, cosine_sim_neg = self._compute_embedding_train_loss(
+            embeddings, labels
+        )
 
         # log the loss and learning rate
         self.log("training_loss", loss, batch_size=len(images), prog_bar=True)
         self.log("lr", self.hparams.learning_rate, batch_size=len(images))
+        self.log("cosine_sim_pos", cosine_sim_pos, batch_size=len(images))
+        self.log("cosine_sim_neg", cosine_sim_neg, batch_size=len(images))
 
         # log the images
         if (self.iteration_count % 200) == 0:
@@ -135,10 +197,14 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         """
         images = batch[self.hparams.image_key]
         labels = batch[self.hparams.labels_key]
-        embeddings, logits = self._model(images)
+        embeddings, logits = self._model.training_forward(images)
 
         # compute the loss
-        loss = self.loss(logits, labels)
+        loss = self.segmentation_loss(logits, labels)
+
+        _, cosine_sim_pos, cosine_sim_neg = self._compute_embedding_val_loss(
+            embeddings, labels
+        )
 
         # compute the metric
         self.val_metric(y_pred=logits, y=labels)
@@ -147,8 +213,8 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         val_outputs = {
             "val_loss": loss,
             "val_number": len(images),
-            # "cosine_sim_pos": cosine_sim_pos,
-            # "cosine_sim_neg": cosine_sim_neg,
+            "cosine_sim_pos": cosine_sim_pos,
+            "cosine_sim_neg": cosine_sim_neg,
         }
         self.validation_step_outputs.append(val_outputs)
 
@@ -156,16 +222,198 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         val_loss, num_items = 0, 0
-        # val_cosine_sim_pos, val_cosine_sim_neg = 0, 0
+        val_cosine_sim_pos, val_cosine_sim_neg = 0, 0
         for output in self.validation_step_outputs:
             val_loss += output["val_loss"].sum().item()
             num_items += output["val_number"]
-            # val_cosine_sim_pos += output["cosine_sim_pos"]
-            # val_cosine_sim_neg += output["cosine_sim_neg"]
+            val_cosine_sim_pos += output["cosine_sim_pos"]
+            val_cosine_sim_neg += output["cosine_sim_neg"]
         mean_val_loss = torch.tensor(val_loss / num_items)
-        # mean_val_cosine_sim_pos = val_cosine_sim_pos / num_items
-        # mean_val_cosine_sim_neg = val_cosine_sim_neg / num_items
+        mean_val_cosine_sim_pos = val_cosine_sim_pos / num_items
+        mean_val_cosine_sim_neg = val_cosine_sim_neg / num_items
+
+        # write the logs
         self.log("val_loss", mean_val_loss, batch_size=num_items)
-        self.validation_step_outputs.clear()  # free memory
+        self.log(
+            "val_cosine_sim_pos", mean_val_cosine_sim_pos, batch_size=num_items
+        )
+        self.log(
+            "val_cosine_sim_neg", mean_val_cosine_sim_neg, batch_size=num_items
+        )
+
+        # free memory
+        self.validation_step_outputs.clear()
         self.val_metric.reset()
         return {"val_loss": mean_val_loss}
+
+    def _compute_embedding_train_loss(
+        self, embeddings: torch.Tensor, labels: torch.Tensor
+    ) -> Tuple[float, float, float]:
+        """Compute the contrastive loss for the embeddings.
+
+        Parameters
+        ----------
+        embeddings : torch.Tensor
+            (n, d) array containing the embeddings.
+        labels : torch.Tensor
+            (n,) array containing the label value for each embedding.
+
+        Returns
+        -------
+        float
+            The computed loss.
+        """
+        # sample the embeddings and loss
+        sampled_embeddings, sampled_labels = sample_random_features(
+            features=embeddings,
+            labels=labels,
+            num_samples_per_class=self.hparams.n_samples_per_class,
+        )
+        cosine_sim_pos, cosine_sim_neg = cosine_similarities(
+            embeddings=sampled_embeddings, labels=sampled_labels
+        )
+
+        if self.hparams.memory_banks:
+            if self.iteration_count > self.hparams.n_memory_warmup:
+                device = (
+                    torch.device("cuda")
+                    if embeddings.is_cuda
+                    else torch.device("cpu")
+                )
+                (
+                    stored_pixel_embeddings,
+                    stored_pixel_labels,
+                ) = self.pixel_memory_bank.get_embeddings()
+                (
+                    stored_label_embeddings,
+                    stored_label_labels,
+                ) = self.label_memory_bank.get_embeddings()
+                contrastive_embeddings = torch.cat(
+                    [stored_pixel_embeddings, stored_label_embeddings]
+                ).to(device)
+                contrastive_labels = torch.cat(
+                    [stored_pixel_labels, stored_label_labels]
+                ).to(device)
+
+                loss = self.contrastive_loss(
+                    predicted_embeddings=sampled_embeddings,
+                    labels=sampled_labels,
+                    contrastive_embeddings=contrastive_embeddings,
+                    contrastive_labels=contrastive_labels,
+                    mask_diagonal=False,
+                )
+
+            else:
+                loss = self.contrastive_loss(
+                    predicted_embeddings=sampled_embeddings,
+                    labels=sampled_labels,
+                    contrastive_embeddings=sampled_embeddings,
+                    contrastive_labels=sampled_labels,
+                    mask_diagonal=True,
+                )
+
+            # update the memory bank
+            self.pixel_memory_bank.set_embeddings(
+                embeddings=sampled_embeddings, labels=sampled_labels
+            )
+            self.label_memory_bank.set_embeddings(
+                embeddings=embeddings, labels=labels
+            )
+
+        else:
+            loss = self.contrastive_loss(
+                predicted_embeddings=sampled_embeddings,
+                labels=sampled_labels,
+                contrastive_embeddings=sampled_embeddings,
+                contrastive_labels=sampled_labels,
+                mask_diagonal=True,
+            )
+
+        # return the loss and cosine similarities
+        return loss, cosine_sim_pos, cosine_sim_neg
+
+    def _compute_embedding_val_loss(
+        self, embeddings: torch.Tensor, labels: torch.Tensor
+    ) -> Tuple[float, float, float]:
+        """Compute the contrastive loss for the embeddings for the validation step.
+
+        Parameters
+        ----------
+        embeddings : torch.Tensor
+            (n, d) array containing the embeddings.
+        labels : torch.Tensor
+            (n,) array containing the label value for each embedding.
+
+        Returns
+        -------
+        float
+            The computed loss.
+        """
+        # sample the embeddings and loss
+        sampled_embeddings, sampled_labels = sample_random_features(
+            features=embeddings,
+            labels=labels,
+            num_samples_per_class=self.hparams.n_samples_per_class,
+        )
+        cosine_sim_pos, cosine_sim_neg = cosine_similarities(
+            embeddings=sampled_embeddings, labels=sampled_labels
+        )
+
+        loss = self.contrastive_loss(
+            predicted_embeddings=sampled_embeddings,
+            labels=sampled_labels,
+            contrastive_embeddings=sampled_embeddings,
+            contrastive_labels=sampled_labels,
+            mask_diagonal=True,
+        )
+
+        # return the loss and cosine similarities
+        return loss, cosine_sim_pos, cosine_sim_neg
+
+    @classmethod
+    def from_pretrained_vit_weights(
+        cls,
+        weights_path: str,
+        image_key: str = "raw",
+        labels_key: str = "label",
+        in_channels: int = 1,
+        n_embedding_dims: int = 32,
+        loss_temperature: float = 0.1,
+        n_samples_per_class: int = 10,
+        learning_rate: float = 1e-4,
+        lr_scheduler_step: int = 1000,
+        lr_reduction_factor: float = 0.2,
+        lr_reduction_patience: int = 15,
+        memory_banks: bool = False,
+        label_values: Optional[List[int]] = None,
+        n_pixel_embeddings_per_class: int = 50,
+        n_pixel_embeddings_to_update: int = 5,
+        n_label_embeddings_per_class: int = 10,
+        n_memory_warmup: int = 1000,
+    ):
+        swin_unetr = cls(
+            image_key=image_key,
+            labels_key=labels_key,
+            in_channels=in_channels,
+            n_embedding_dims=n_embedding_dims,
+            loss_temperature=loss_temperature,
+            n_samples_per_class=n_samples_per_class,
+            learning_rate=learning_rate,
+            lr_scheduler_step=lr_scheduler_step,
+            lr_reduction_factor=lr_reduction_factor,
+            lr_reduction_patience=lr_reduction_patience,
+            memory_banks=memory_banks,
+            label_values=label_values,
+            n_pixel_embeddings_per_class=n_pixel_embeddings_per_class,
+            n_pixel_embeddings_to_update=n_pixel_embeddings_to_update,
+            n_label_embeddings_per_class=n_label_embeddings_per_class,
+            n_memory_warmup=n_memory_warmup,
+        )
+
+        # load the weights
+        weights = torch.load(weights_path)
+
+        # update the model
+        swin_unetr._model.load_from(weights)
+
+        return swin_unetr
