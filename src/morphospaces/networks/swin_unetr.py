@@ -161,13 +161,20 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         embeddings, logits = self._model.training_forward(images)
 
         # compute the loss
-        loss = self.segmentation_loss(logits, labels)
+        segmentation_loss = self.segmentation_loss(logits, labels)
 
-        _, cosine_sim_pos, cosine_sim_neg = self._compute_embedding_train_loss(
-            embeddings, labels
-        )
+        (
+            embedding_loss,
+            cosine_sim_pos,
+            cosine_sim_neg,
+        ) = self._compute_embedding_train_loss(embeddings, labels)
+        loss = segmentation_loss + embedding_loss
 
         # log the loss and learning rate
+        self.log("embedding_loss", embedding_loss, batch_size=len(images))
+        self.log(
+            "segmentation_loss", segmentation_loss, batch_size=len(images)
+        )
         self.log("training_loss", loss, batch_size=len(images), prog_bar=True)
         self.log("lr", self.hparams.learning_rate, batch_size=len(images))
         self.log("cosine_sim_pos", cosine_sim_pos, batch_size=len(images))
@@ -200,11 +207,14 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         embeddings, logits = self._model.training_forward(images)
 
         # compute the loss
-        loss = self.segmentation_loss(logits, labels)
+        segmentation_loss = self.segmentation_loss(logits, labels)
 
-        _, cosine_sim_pos, cosine_sim_neg = self._compute_embedding_val_loss(
-            embeddings, labels
-        )
+        (
+            embedding_loss,
+            cosine_sim_pos,
+            cosine_sim_neg,
+        ) = self._compute_embedding_val_loss(embeddings, labels)
+        loss = segmentation_loss + embedding_loss
 
         # compute the metric
         self.val_metric(y_pred=logits, y=labels)
