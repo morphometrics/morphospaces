@@ -222,6 +222,8 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         # log the loss and learning rate
         val_outputs = {
             "val_loss": loss,
+            "val_segmentation_loss": segmentation_loss,
+            "val_embedding_loss": embedding_loss,
             "val_number": len(images),
             "cosine_sim_pos": cosine_sim_pos,
             "cosine_sim_neg": cosine_sim_neg,
@@ -233,14 +235,20 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
     def on_validation_epoch_end(self):
         val_loss, num_items = 0, 0
         val_cosine_sim_pos, val_cosine_sim_neg = 0, 0
+        val_embedding_loss = 0
+        val_segmentation_loss = 0
         for output in self.validation_step_outputs:
             val_loss += output["val_loss"].sum().item()
             num_items += output["val_number"]
             val_cosine_sim_pos += output["cosine_sim_pos"]
             val_cosine_sim_neg += output["cosine_sim_neg"]
+            val_embedding_loss += output["val_embedding_loss"]
+            val_segmentation_loss += output["val_segmentation_loss"]
         mean_val_loss = torch.tensor(val_loss / num_items)
         mean_val_cosine_sim_pos = val_cosine_sim_pos / num_items
         mean_val_cosine_sim_neg = val_cosine_sim_neg / num_items
+        mean_val_segmentation_loss = val_segmentation_loss / num_items
+        mean_val_embedding_loss = val_embedding_loss / num_items
 
         # write the logs
         self.log("val_loss", mean_val_loss, batch_size=num_items)
@@ -249,6 +257,14 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         )
         self.log(
             "val_cosine_sim_neg", mean_val_cosine_sim_neg, batch_size=num_items
+        )
+        self.log(
+            "val_embedding_loss", mean_val_embedding_loss, batch_size=num_items
+        )
+        self.log(
+            "val_segmentation_loss",
+            mean_val_segmentation_loss,
+            batch_size=num_items,
         )
 
         # free memory
