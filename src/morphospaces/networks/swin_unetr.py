@@ -167,7 +167,9 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
             embedding_loss,
             cosine_sim_pos,
             cosine_sim_neg,
-        ) = self._compute_embedding_train_loss(embeddings, labels)
+        ) = self._compute_embedding_loss(
+            embeddings, labels, update_memory_bank=True
+        )
         loss = segmentation_loss + embedding_loss
 
         # log the loss and learning rate
@@ -213,7 +215,9 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
             embedding_loss,
             cosine_sim_pos,
             cosine_sim_neg,
-        ) = self._compute_embedding_val_loss(embeddings, labels)
+        ) = self._compute_embedding_loss(
+            embeddings, labels, update_memory_bank=False
+        )
         loss = segmentation_loss + embedding_loss
 
         # compute the metric
@@ -272,8 +276,11 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         self.val_metric.reset()
         return {"val_loss": mean_val_loss}
 
-    def _compute_embedding_train_loss(
-        self, embeddings: torch.Tensor, labels: torch.Tensor
+    def _compute_embedding_loss(
+        self,
+        embeddings: torch.Tensor,
+        labels: torch.Tensor,
+        update_memory_bank: bool = False,
     ) -> Tuple[float, float, float]:
         """Compute the contrastive loss for the embeddings.
 
@@ -283,6 +290,10 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
             (n, d) array containing the embeddings.
         labels : torch.Tensor
             (n,) array containing the label value for each embedding.
+        update_memory_bank : bool
+            If set to True, the embeddings will be added to the memory bank.
+            Generally, this is set to True during trianing and False during
+            validation. Default value is False.
 
         Returns
         -------
@@ -338,13 +349,14 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
                     mask_diagonal=True,
                 )
 
-            # update the memory bank
-            self.pixel_memory_bank.set_embeddings(
-                embeddings=sampled_embeddings, labels=sampled_labels
-            )
-            self.label_memory_bank.set_embeddings(
-                embeddings=embeddings, labels=labels
-            )
+            if update_memory_bank:
+                # update the memory bank
+                self.pixel_memory_bank.set_embeddings(
+                    embeddings=sampled_embeddings, labels=sampled_labels
+                )
+                self.label_memory_bank.set_embeddings(
+                    embeddings=embeddings, labels=labels
+                )
 
         else:
             loss = self.contrastive_loss(
@@ -358,43 +370,44 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         # return the loss and cosine similarities
         return loss, cosine_sim_pos, cosine_sim_neg
 
-    def _compute_embedding_val_loss(
-        self, embeddings: torch.Tensor, labels: torch.Tensor
-    ) -> Tuple[float, float, float]:
-        """Compute the contrastive loss for the embeddings for the validation step.
-
-        Parameters
-        ----------
-        embeddings : torch.Tensor
-            (n, d) array containing the embeddings.
-        labels : torch.Tensor
-            (n,) array containing the label value for each embedding.
-
-        Returns
-        -------
-        float
-            The computed loss.
-        """
-        # sample the embeddings and loss
-        sampled_embeddings, sampled_labels = sample_random_features(
-            features=embeddings,
-            labels=labels,
-            num_samples_per_class=self.hparams.n_samples_per_class,
-        )
-        cosine_sim_pos, cosine_sim_neg = cosine_similarities(
-            embeddings=sampled_embeddings, labels=sampled_labels
-        )
-
-        loss = self.contrastive_loss(
-            predicted_embeddings=sampled_embeddings,
-            labels=sampled_labels,
-            contrastive_embeddings=sampled_embeddings,
-            contrastive_labels=sampled_labels,
-            mask_diagonal=True,
-        )
-
-        # return the loss and cosine similarities
-        return loss, cosine_sim_pos, cosine_sim_neg
+    # def _compute_embedding_val_loss(
+    #     self, embeddings: torch.Tensor, labels: torch.Tensor
+    # ) -> Tuple[float, float, float]:
+    #     """Compute the contrastive loss for the embeddings for
+    #     the validation step.
+    #
+    #     Parameters
+    #     ----------
+    #     embeddings : torch.Tensor
+    #         (n, d) array containing the embeddings.
+    #     labels : torch.Tensor
+    #         (n,) array containing the label value for each embedding.
+    #
+    #     Returns
+    #     -------
+    #     float
+    #         The computed loss.
+    #     """
+    #     # sample the embeddings and loss
+    #     sampled_embeddings, sampled_labels = sample_random_features(
+    #         features=embeddings,
+    #         labels=labels,
+    #         num_samples_per_class=self.hparams.n_samples_per_class,
+    #     )
+    #     cosine_sim_pos, cosine_sim_neg = cosine_similarities(
+    #         embeddings=sampled_embeddings, labels=sampled_labels
+    #     )
+    #
+    #     loss = self.contrastive_loss(
+    #         predicted_embeddings=sampled_embeddings,
+    #         labels=sampled_labels,
+    #         contrastive_embeddings=sampled_embeddings,
+    #         contrastive_labels=sampled_labels,
+    #         mask_diagonal=True,
+    #     )
+    #
+    #     # return the loss and cosine similarities
+    #     return loss, cosine_sim_pos, cosine_sim_neg
 
     @classmethod
     def from_pretrained_vit_weights(
