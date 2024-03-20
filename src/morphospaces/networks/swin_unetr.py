@@ -170,7 +170,11 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         ) = self._compute_embedding_loss(
             embeddings, labels, update_memory_bank=True
         )
-        loss = segmentation_loss + embedding_loss
+
+        if self.hparams.memory_banks:
+            loss = segmentation_loss + embedding_loss
+        else:
+            loss = segmentation_loss
 
         # log the loss and learning rate
         self.log("embedding_loss", embedding_loss, batch_size=len(images))
@@ -218,7 +222,11 @@ class PixelEmbeddingSwinUNETR(pl.LightningModule):
         ) = self._compute_embedding_loss(
             embeddings, labels, update_memory_bank=False
         )
-        loss = segmentation_loss + embedding_loss
+
+        if self.hparams.memory_banks:
+            loss = segmentation_loss + embedding_loss
+        else:
+            loss = segmentation_loss
 
         # compute the metric
         self.val_metric(y_pred=logits, y=labels)
