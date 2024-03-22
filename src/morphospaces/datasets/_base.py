@@ -40,8 +40,13 @@ class BaseTiledDataset(Dataset):
         patch_filter_key: str = "label",
         patch_threshold: float = 0.6,
         patch_slack_acceptance=0.01,
+        store_unique_label_values: bool = False,
     ):
         self.file_path = file_path
+        self.patch_filter_key = patch_filter_key
+        self.patch_filter_ignore_index = patch_filter_ignore_index
+        self.patch_threshold = patch_threshold
+        self.patch_slack_acceptance = patch_slack_acceptance
 
         # load the data (will be lazy if get_array() returns lazy object)
         assert len(dataset_keys) > 0, "dataset_keys must be a non-empty list"
@@ -57,10 +62,10 @@ class BaseTiledDataset(Dataset):
             data=self.data,
             patch_shape=patch_shape,
             stride_shape=stride_shape,
-            patch_filter_ignore_index=patch_filter_ignore_index,
-            patch_filter_key=patch_filter_key,
-            patch_threshold=patch_threshold,
-            patch_slack_acceptance=patch_slack_acceptance,
+            patch_filter_ignore_index=self.patch_filter_ignore_index,
+            patch_filter_key=self.patch_filter_key,
+            patch_threshold=self.patch_threshold,
+            patch_slack_acceptance=self.patch_slack_acceptance,
         )
 
         logger.info(
@@ -69,6 +74,23 @@ class BaseTiledDataset(Dataset):
 
         # store the transformation
         self.transform = transform
+
+        if store_unique_label_values:
+            self.unique_label_values = self._get_unique_labels()
+            logger.info(f"    labels: {self.unique_label_values }")
+        else:
+            self.unique_label_values = None
+
+    def _get_unique_labels(self) -> List[int]:
+        """Get the unique values in the patch_filter_key dataset"""
+        unique_labels = set()
+        for slice_indices in self.patches.slices:
+            array = self.data[self.patch_filter_key]
+            data_patch = array[slice_indices]
+            label_values = np.unique(data_patch)
+            unique_labels.update(label_values)
+
+        return list(unique_labels)
 
     @property
     def patch_count(self) -> int:
@@ -117,10 +139,12 @@ class BaseTiledDataset(Dataset):
         patch_filter_key: str = "label",
         patch_threshold: float = 0.6,
         patch_slack_acceptance=0.01,
+        store_unique_label_values: bool = False,
     ):
         file_paths = glob.glob(glob_pattern)
         datasets = []
         for path in file_paths:
+            # make a dataset for each file that matches the pattern
             try:
                 dataset = cls(
                     file_path=path,
@@ -132,10 +156,19 @@ class BaseTiledDataset(Dataset):
                     patch_filter_key=patch_filter_key,
                     patch_threshold=patch_threshold,
                     patch_slack_acceptance=patch_slack_acceptance,
+                    store_unique_label_values=store_unique_label_values,
                 )
                 datasets.append(dataset)
             except AssertionError:
                 logger.info(f"{path} skipped")
+
+        if store_unique_label_values:
+            unique_label_values = set()
+            for dataset in datasets:
+                # get the unique label values across all datasets
+                unique_label_values.update(dataset.unique_label_values)
+
+            return ConcatDataset(datasets), list(unique_label_values)
 
         return ConcatDataset(datasets)
 

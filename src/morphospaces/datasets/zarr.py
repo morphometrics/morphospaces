@@ -25,6 +25,7 @@ class LazyTiledZarrDataset(BaseTiledDataset):
         raw_internal_path="raw",
         label_internal_path="label",
         weight_internal_path=None,
+        store_unique_label_values: bool = False,
     ):
         super().__init__(
             file_path=file_path,
@@ -39,6 +40,7 @@ class LazyTiledZarrDataset(BaseTiledDataset):
             raw_internal_path=raw_internal_path,
             label_internal_path=label_internal_path,
             weight_internal_path=weight_internal_path,
+            store_unique_label_values=store_unique_label_values,
         )
 
     @staticmethod

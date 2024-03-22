@@ -263,3 +263,31 @@ class RandPatchReduceIntensityd:
         attenuated_image = image * attenuation_map
         data_item.update({self.image_key: attenuated_image})
         return data_item
+
+
+class StandardizeImage:
+    """Standardize an image.
+
+    This subtracts the mean and divides by the standard deviation.
+
+    Parameters
+    ----------
+    keys : Union[str, List[str]]
+        The keys in the dataset to apply the transform to.
+    """
+
+    def __init__(self, keys: Union[str, List[str]]):
+        if isinstance(keys, str):
+            keys = [keys]
+        self.keys: List[str] = keys
+
+    def __call__(
+        self, data_item: Dict[str, np.ndarray]
+    ) -> Dict[str, np.ndarray]:
+        for key in self.keys:
+            image = data_item[key]
+            mean = np.mean(image)
+            std = np.std(image)
+            standardized_image = (image - mean) / std
+            data_item.update({key: standardized_image})
+        return data_item
