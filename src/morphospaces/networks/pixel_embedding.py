@@ -2,8 +2,11 @@ from typing import Dict, List, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
+from monai.losses import DiceCELoss
+from monai.networks.blocks import UnetOutBlock
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
+from morphospaces.logging.image import log_images
 from morphospaces.losses.embedding import NCELoss
 from morphospaces.losses.util import (
     cosine_similarities,
@@ -74,13 +77,23 @@ class PixelEmbedding(pl.LightningModule):
         # store parameters
         self.save_hyperparameters()
 
+        # make the model
         self._model = ResidualUNet3D(
             in_channels=in_channels,
             out_channels=n_embedding_dims,
             num_levels=n_layers,
             conv_padding=1,
         )
-        self.loss = NCELoss(temperature=self.hparams.loss_temperature)
+        self._segmentation_head = UnetOutBlock(
+            spatial_dims=3,
+            in_channels=n_embedding_dims,
+            out_channels=len(label_values),
+        )
+
+        self.contrastive_loss = NCELoss(
+            temperature=self.hparams.loss_temperature
+        )
+        self.segmentation_loss = DiceCELoss(to_onehot_y=True, softmax=True)
 
         # make the memory banks if requested
         if self.hparams.memory_banks:
@@ -146,17 +159,44 @@ class PixelEmbedding(pl.LightningModule):
         images = batch[self.hparams.image_key]
         labels = batch[self.hparams.labels_key]
         embeddings = self._model(images)
+        logits = self._segmentation_head(embeddings)
 
         # compute the loss
-        loss, cosine_sim_pos, cosine_sim_neg = self._compute_train_loss(
-            embeddings, labels
+        (
+            embedding_loss,
+            cosine_sim_pos,
+            cosine_sim_neg,
+        ) = self._compute_embedding_loss(
+            embeddings, labels, update_memory_bank=True
         )
+        segmentation_loss = self.segmentation_loss(logits, labels)
+
+        if self.hparams.memory_banks:
+            loss = segmentation_loss + embedding_loss
+        else:
+            loss = segmentation_loss
 
         # log the loss and learning rate
         self.log("training_loss", loss, batch_size=len(images), prog_bar=True)
         self.log("lr", self.hparams.learning_rate, batch_size=len(images))
+        self.log("embedding_loss", embedding_loss, batch_size=len(images))
+        self.log(
+            "segmentation_loss", segmentation_loss, batch_size=len(images)
+        )
         self.log("cosine_sim_pos", cosine_sim_pos, batch_size=len(images))
         self.log("cosine_sim_neg", cosine_sim_neg, batch_size=len(images))
+
+        # log the images
+        if (self.iteration_count % 200) == 0:
+            # only log every 200 iterations
+            log_images(
+                input=images,
+                target=labels,
+                prediction=logits,
+                iteration_index=self.iteration_count,
+                logger=self.logger.experiment,
+                prefix="segmentation",
+            )
 
         self.iteration_count += 1
         return {"loss": loss}
@@ -170,15 +210,28 @@ class PixelEmbedding(pl.LightningModule):
         images = batch[self.hparams.image_key]
         labels = batch[self.hparams.labels_key]
         embeddings = self._model(images)
+        logits = self._segmentation_head(embeddings)
 
         # compute the loss
-        loss, cosine_sim_pos, cosine_sim_neg = self._compute_val_loss(
-            embeddings, labels
+        (
+            embedding_loss,
+            cosine_sim_pos,
+            cosine_sim_neg,
+        ) = self._compute_embedding_loss(
+            embeddings, labels, update_memory_bank=False
         )
+        segmentation_loss = self.segmentation_loss(logits, labels)
+
+        if self.hparams.memory_banks:
+            loss = segmentation_loss + embedding_loss
+        else:
+            loss = segmentation_loss
 
         # log the loss and learning rate
         val_outputs = {
             "val_loss": loss,
+            "val_segmentation_loss": segmentation_loss,
+            "val_embedding_loss": embedding_loss,
             "val_number": len(images),
             "cosine_sim_pos": cosine_sim_pos,
             "cosine_sim_neg": cosine_sim_neg,
@@ -190,14 +243,22 @@ class PixelEmbedding(pl.LightningModule):
     def on_validation_epoch_end(self):
         val_loss, num_items = 0, 0
         val_cosine_sim_pos, val_cosine_sim_neg = 0, 0
+        val_embedding_loss = 0
+        val_segmentation_loss = 0
         for output in self.validation_step_outputs:
             val_loss += output["val_loss"].sum().item()
             num_items += output["val_number"]
             val_cosine_sim_pos += output["cosine_sim_pos"]
             val_cosine_sim_neg += output["cosine_sim_neg"]
+            val_embedding_loss += output["val_embedding_loss"]
+            val_segmentation_loss += output["val_segmentation_loss"]
         mean_val_loss = torch.tensor(val_loss / num_items)
         mean_val_cosine_sim_pos = val_cosine_sim_pos / num_items
         mean_val_cosine_sim_neg = val_cosine_sim_neg / num_items
+        mean_val_segmentation_loss = val_segmentation_loss / num_items
+        mean_val_embedding_loss = val_embedding_loss / num_items
+
+        # write the logs
         self.log("val_loss", mean_val_loss, batch_size=num_items)
         self.log(
             "val_cosine_sim_pos", mean_val_cosine_sim_pos, batch_size=num_items
@@ -205,11 +266,24 @@ class PixelEmbedding(pl.LightningModule):
         self.log(
             "val_cosine_sim_neg", mean_val_cosine_sim_neg, batch_size=num_items
         )
-        self.validation_step_outputs.clear()  # free memory
+        self.log(
+            "val_embedding_loss", mean_val_embedding_loss, batch_size=num_items
+        )
+        self.log(
+            "val_segmentation_loss",
+            mean_val_segmentation_loss,
+            batch_size=num_items,
+        )
+
+        # free memory
+        self.validation_step_outputs.clear()
         return {"val_loss": mean_val_loss}
 
-    def _compute_train_loss(
-        self, embeddings: torch.Tensor, labels: torch.Tensor
+    def _compute_embedding_loss(
+        self,
+        embeddings: torch.Tensor,
+        labels: torch.Tensor,
+        update_memory_bank: bool = False,
     ) -> Tuple[float, float, float]:
         """Compute the contrastive loss for the embeddings.
 
@@ -219,6 +293,10 @@ class PixelEmbedding(pl.LightningModule):
             (n, d) array containing the embeddings.
         labels : torch.Tensor
             (n,) array containing the label value for each embedding.
+        update_memory_bank : bool
+            If set to True, the embeddings will be added to the memory bank.
+            Generally, this is set to True during trianing and False during
+            validation. Default value is False.
 
         Returns
         -------
@@ -257,7 +335,7 @@ class PixelEmbedding(pl.LightningModule):
                     [stored_pixel_labels, stored_label_labels]
                 ).to(device)
 
-                loss = self.loss(
+                loss = self.contrastive_loss(
                     predicted_embeddings=sampled_embeddings,
                     labels=sampled_labels,
                     contrastive_embeddings=contrastive_embeddings,
@@ -266,68 +344,30 @@ class PixelEmbedding(pl.LightningModule):
                 )
 
             else:
-                loss = self.loss(
+                loss = self.contrastive_loss(
                     predicted_embeddings=sampled_embeddings,
                     labels=sampled_labels,
                     contrastive_embeddings=sampled_embeddings,
                     contrastive_labels=sampled_labels,
                     mask_diagonal=True,
                 )
-
-            # update the memory bank
-            self.pixel_memory_bank.set_embeddings(
-                embeddings=sampled_embeddings, labels=sampled_labels
-            )
-            self.label_memory_bank.set_embeddings(
-                embeddings=embeddings, labels=labels
-            )
+            if update_memory_bank:
+                # update the memory bank
+                self.pixel_memory_bank.set_embeddings(
+                    embeddings=sampled_embeddings, labels=sampled_labels
+                )
+                self.label_memory_bank.set_embeddings(
+                    embeddings=embeddings, labels=labels
+                )
 
         else:
-            loss = self.loss(
+            loss = self.contrastive_loss(
                 predicted_embeddings=sampled_embeddings,
                 labels=sampled_labels,
                 contrastive_embeddings=sampled_embeddings,
                 contrastive_labels=sampled_labels,
                 mask_diagonal=True,
             )
-
-        # return the loss and cosine similarities
-        return loss, cosine_sim_pos, cosine_sim_neg
-
-    def _compute_val_loss(
-        self, embeddings: torch.Tensor, labels: torch.Tensor
-    ) -> Tuple[float, float, float]:
-        """Compute the contrastive loss for the embeddings for the validation step.
-
-        Parameters
-        ----------
-        embeddings : torch.Tensor
-            (n, d) array containing the embeddings.
-        labels : torch.Tensor
-            (n,) array containing the label value for each embedding.
-
-        Returns
-        -------
-        float
-            The computed loss.
-        """
-        # sample the embeddings and loss
-        sampled_embeddings, sampled_labels = sample_random_features(
-            features=embeddings,
-            labels=labels,
-            num_samples_per_class=self.hparams.n_samples_per_class,
-        )
-        cosine_sim_pos, cosine_sim_neg = cosine_similarities(
-            embeddings=sampled_embeddings, labels=sampled_labels
-        )
-
-        loss = self.loss(
-            predicted_embeddings=sampled_embeddings,
-            labels=sampled_labels,
-            contrastive_embeddings=sampled_embeddings,
-            contrastive_labels=sampled_labels,
-            mask_diagonal=True,
-        )
 
         # return the loss and cosine similarities
         return loss, cosine_sim_pos, cosine_sim_neg
