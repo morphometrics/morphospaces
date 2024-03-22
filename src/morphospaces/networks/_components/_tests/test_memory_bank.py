@@ -141,9 +141,9 @@ def test_label_memory_bank():
     assert torch.all(torch.isnan(memory_bank.embeddings))
 
     # test setting some embeddings
-    new_embeddings = torch.zeros((n_dimensions, 1, 1, 2))
-    new_embeddings[:, 0, 0, 0] = torch.tensor([0.1, 0.1, 0.1])
-    new_embeddings[:, 0, 0, 1] = torch.tensor([0.1, 0.1, 0.1])
+    new_embeddings = torch.zeros((1, n_dimensions, 1, 1, 2))
+    new_embeddings[0, :, 0, 0, 0] = torch.tensor([0.1, 0.1, 0.1])
+    new_embeddings[0, :, 0, 0, 1] = torch.tensor([0.1, 0.1, 0.1])
     label_to_set = 4
     labels = torch.zeros((1, 1, 2), dtype=torch.int)
     labels[:, :, :] = label_to_set
@@ -182,9 +182,9 @@ def test_label_memory_bank_overflow():
     memory_bank.current_index[2] = 9
 
     # add some new embeddings
-    new_embeddings = torch.zeros((n_dimensions, 1, 1, 2))
-    new_embeddings[:, 0, 0, 0] = torch.tensor([1, 0, 0])
-    new_embeddings[:, 0, 0, 1] = torch.tensor([1, 0, 0])
+    new_embeddings = torch.zeros((1, n_dimensions, 1, 1, 2))
+    new_embeddings[0, :, 0, 0, 0] = torch.tensor([1, 0, 0])
+    new_embeddings[0, :, 0, 0, 1] = torch.tensor([1, 0, 0])
     label_to_set = 4
     labels = torch.zeros((1, 1, 2), dtype=torch.int)
     labels[:, :, :] = label_to_set
