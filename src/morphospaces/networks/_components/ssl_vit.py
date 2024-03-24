@@ -14,6 +14,7 @@ class SSLVit(nn.Module):
         use_checkpoint: bool = False,
         dim: int = 768,
     ):
+        super().__init__()
         patch_size = ensure_tuple_rep(2, n_spatial_dims)
         window_size = ensure_tuple_rep(7, n_spatial_dims)
 
