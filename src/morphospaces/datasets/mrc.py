@@ -14,7 +14,8 @@ from torch.utils.data import ConcatDataset
 
 class MrcDataset(BaseTiledDataset):
     """
-    Implementation of the mrc dataset which only loads image into numpy array.
+    Implementation of the mrc dataset that loads both image mrcfiles and their corresponding maskmrc files into numpy arrays, \
+    constructing a map-style dataset, such as {'mrc_tomogram': Array([...], dtype=np.float32), 'mrc_mask': Array([...], dtype=np.float32)}.
     """
 
     def __init__(
