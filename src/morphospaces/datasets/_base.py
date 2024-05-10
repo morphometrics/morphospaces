@@ -25,9 +25,9 @@ class BaseTiledDataset(Dataset):
 
     def __init__(
         self,
-        file_path: str,
         dataset_keys: List[str],
-        transform=None,
+        file_path: str = None,
+        transform = None,
         patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (
             96,
             96,
@@ -36,32 +36,40 @@ class BaseTiledDataset(Dataset):
         stride_shape: Union[
             Tuple[int, int, int], Tuple[int, int, int, int]
         ] = (24, 24, 24),
-        patch_filter_ignore_index: Tuple[int, ...] = (0,),
+        patch_filter_ignore_index: Tuple[int, ...] = (),
         patch_filter_key: str = "label",
         patch_threshold: float = 0.6,
         patch_slack_acceptance=0.01,
         store_unique_label_values: bool = False,
     ):
         self.file_path = file_path
-        self.patch_filter_key = patch_filter_key
+        self.transform = transform
+        self.patch_shape = patch_shape
+        self.stride_shape = stride_shape
         self.patch_filter_ignore_index = patch_filter_ignore_index
+        self.patch_filter_key = patch_filter_key
         self.patch_threshold = patch_threshold
         self.patch_slack_acceptance = patch_slack_acceptance
+        self.store_unique_label_values = store_unique_label_values
 
         # load the data (will be lazy if get_array() returns lazy object)
         assert len(dataset_keys) > 0, "dataset_keys must be a non-empty list"
-        self.data: Dict[str, ArrayLike] = {
-            key: self.get_array(self.file_path, key) for key in dataset_keys
-        }
+        if self.file_path is not None:
+            self.data: Dict[str, ArrayLike] = {
+                key: self.get_array(self.file_path, key) for key in dataset_keys
+            }
+            self._init_states()
 
+
+    def _init_states(self):
         # make the slices
         assert (
-            patch_filter_key in self.data
+            self.patch_filter_key in self.data
         ), "patch_filter_key must be a dataset key"
         self.patches = PatchManager(
             data=self.data,
-            patch_shape=patch_shape,
-            stride_shape=stride_shape,
+            patch_shape=self.patch_shape,
+            stride_shape=self.stride_shape,
             patch_filter_ignore_index=self.patch_filter_ignore_index,
             patch_filter_key=self.patch_filter_key,
             patch_threshold=self.patch_threshold,
@@ -69,18 +77,16 @@ class BaseTiledDataset(Dataset):
         )
 
         logger.info(
-            f"Loaded: {file_path}\n    Number of patches: {self.patch_count}"
+            f"Loaded: {self.file_path}\n    Number of patches: {self.patch_count}"
         )
 
-        # store the transformation
-        self.transform = transform
-
-        if store_unique_label_values:
+        if self.store_unique_label_values:
             self.unique_label_values = self._get_unique_labels()
             logger.info(f"    labels: {self.unique_label_values }")
         else:
             self.unique_label_values = None
-
+    
+    
     def _get_unique_labels(self) -> List[int]:
         """Get the unique values in the patch_filter_key dataset"""
         unique_labels = set()
@@ -135,7 +141,7 @@ class BaseTiledDataset(Dataset):
         stride_shape: Union[
             Tuple[int, int, int], Tuple[int, int, int, int]
         ] = (24, 24, 24),
-        patch_filter_ignore_index: Tuple[int, ...] = (0,),
+        patch_filter_ignore_index: Tuple[int, ...] = (),
         patch_filter_key: str = "label",
         patch_threshold: float = 0.6,
         patch_slack_acceptance=0.01,

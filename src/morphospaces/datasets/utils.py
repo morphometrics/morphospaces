@@ -93,7 +93,7 @@ class FilterSliceBuilder(SliceBuilder):
         dataset: ArrayLike,
         patch_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]],
         stride_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]],
-        filter_ignore_index: Tuple[int, ...] = (0,),
+        filter_ignore_index: Tuple[int, ...] = (),
         threshold: float = 0.6,
         slack_acceptance: float = 0.01,
     ):
@@ -113,6 +113,7 @@ class FilterSliceBuilder(SliceBuilder):
         for ignore_value in filter_ignore_index:
             label_image[label_image == ignore_value] = 0
 
+
         def ignore_predicate(slice_to_filter):
             patch = label_image[slice_to_filter]
             non_ignore_counts = np.count_nonzero(patch != 0)
@@ -124,7 +125,8 @@ class FilterSliceBuilder(SliceBuilder):
 
         # filter slices with less than the requested volume fraction
         # of non-ignore_index
-        self._slices = list(filter(ignore_predicate, self.slices))
+        #self._slices = list(filter(ignore_predicate, self.slices))
+        self._slices = list(self.slices)
 
 
 class PatchManager:
@@ -139,7 +141,7 @@ class PatchManager:
         stride_shape: Union[
             Tuple[int, int, int], Tuple[int, int, int, int]
         ] = (24, 24, 24),
-        patch_filter_ignore_index: Tuple[int, ...] = (0,),
+        patch_filter_ignore_index: Tuple[int, ...] = (),
         patch_filter_key: str = "label",
         patch_threshold: float = 0.6,
         patch_slack_acceptance=0.01,
@@ -163,7 +165,7 @@ class PatchManager:
                 dataset=dataset,
                 patch_shape=self.shape,
                 stride_shape=self.stride,
-                filter_ignore_index=self.filter_ignore_index,
+                filter_ignore_index=(),#self.filter_ignore_index,
                 threshold=self.threshold,
                 slack_acceptance=self.slack_acceptance,
             )
