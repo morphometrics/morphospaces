@@ -32,7 +32,13 @@ logger.addHandler(logging.StreamHandler(sys.stdout))
 
 def parse_args():
     parser = argparse.ArgumentParser("train the pixel embedding model.")
-    parser.add_argument("lr", help="Learning rate.", type=float)
+    parser.add_argument("-p", "--pretrained_weights_path", help="Pretrained weights path", type=str, required=True)
+    parser.add_argument("-td", "--train_tomogram_path", help="tomogram mrc files directory for training dataset", type=str, required=True)
+    parser.add_argument("-tm", "--train_mask_path", help="mask mrc files directory for taining dataset", type=str, required=True)
+    parser.add_argument("-vd", "--val_tomogram_path", help="tomogram mrc files directory for validation dataset", type=str, required=True)
+    parser.add_argument("-vm", "--val_mask_path", help="mask mrc files directory for validation dataset", type=str, required=True)
+    parser.add_argument("-l", "--lr", help="Learning rate. Default is 0.0001", type=float, default=0.0001)
+    parser.add_argument("-o", "--logdir", help="output dir name in curr working dir. Default is checkpoints", type=str, default='checkpoints')
     return parser.parse_args()
 
 
@@ -41,6 +47,12 @@ if __name__ == "__main__":
     # CLI arguments
     args = parse_args()
     lr = args.lr
+    logdir = args.logdir
+    pretrained_weights_path = args.pretrained_weights_path
+    train_tomogram_path = args.train_tomogram_path
+    train_mask_path = args.train_mask_path
+    val_tomogram_path = args.val_tomogram_path
+    val_mask_path = args.val_mask_path
     # lr = 0.0008
 
     # patch parameters
@@ -53,17 +65,20 @@ if __name__ == "__main__":
 
     image_key = "mrc_tomogram"
     labels_key = "mrc_mask"
-    train_data_pattern =  {image_key: '/hpc/projects/group.czii/kevin.zhao/morphospaces/examples/pixel_embedding/simulation/train/tomograms/*.mrc',
-                           labels_key: '/hpc/projects/group.czii/kevin.zhao/morphospaces/examples/pixel_embedding/simulation/train/masks/*.mrc'}
-    val_data_pattern =  {image_key: '/hpc/projects/group.czii/kevin.zhao/morphospaces/examples/pixel_embedding/simulation/eval/tomograms/*.mrc',
-                        labels_key: '/hpc/projects/group.czii/kevin.zhao/morphospaces/examples/pixel_embedding/simulation/eval/masks/*.mrc'}
+    train_data_pattern =  {image_key: train_tomogram_path+'/*.mrc',
+                           labels_key: train_mask_path+'/*.mrc'}
+    val_data_pattern =  {image_key: val_tomogram_path+'/*.mrc',
+                        labels_key: val_mask_path+'/*.mrc'}
 
 
+    print(f'train_data_pattern {train_data_pattern}')
+    
     learning_rate_string = str(lr).replace(".", "_")
-    logdir_path = f"./checkpoints_swin_{learning_rate_string}_memory_20240510"
+    #logdir_path = f"./checkpoints_swin_{learning_rate_string}_memory_20240513"
+    logdir_path = "./"+logdir
 
     # pretrained weights
-    pretrained_weights_path = "/hpc/projects/group.czii/kevin.zhao/swin_unetr_embedding/model_swinvit.pt"
+    pretrained_weights_path = pretrained_weights_path
 
     # training parameters
     n_samples_per_class = 1000
