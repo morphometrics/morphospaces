@@ -28,6 +28,7 @@ class SemanticSwinUNETR(pl.LightningModule):
         lr_reduction_factor: float = 0.2,
         lr_reduction_patience: int = 15,
         log_image_every_n: int = 200,
+        distributed_training: bool = False,
     ):
         super().__init__()
 
@@ -103,7 +104,13 @@ class SemanticSwinUNETR(pl.LightningModule):
         loss = self.loss_function(logits, labels)
 
         # log the loss and learning rate
-        self.log("training_loss", loss, batch_size=len(images), prog_bar=True)
+        self.log(
+            "training_loss",
+            loss,
+            batch_size=len(images),
+            prog_bar=True,
+            sync_dist=self.hparams.distributed_training,
+        )
 
         # log the images
         if (self.iteration_count % self.hparams.log_image_every_n) == 0:
@@ -167,12 +174,22 @@ class SemanticSwinUNETR(pl.LightningModule):
             val_loss += output["val_loss"].sum().item()
             num_items += output["val_number"]
         mean_val_loss = torch.tensor(val_loss / num_items)
-        self.log("val_loss", mean_val_loss, batch_size=num_items)
+        self.log(
+            "val_loss",
+            mean_val_loss,
+            batch_size=num_items,
+            sync_dist=self.hparams.distributed_training,
+        )
         self.validation_step_outputs.clear()  # free memory
 
         # compute the mean validation metric
         mean_val_dice = self.validation_metric.aggregate().item()
         self.validation_metric.reset()
-        self.log("val_dice", mean_val_dice, batch_size=num_items)
+        self.log(
+            "val_dice",
+            mean_val_dice,
+            batch_size=num_items,
+            sync_dist=self.hparams.distributed_training,
+        )
 
         return {"val_loss": mean_val_loss, "val_dice": mean_val_dice}
