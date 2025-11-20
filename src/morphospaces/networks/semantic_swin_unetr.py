@@ -23,6 +23,7 @@ class SemanticSwinUNETR(pl.LightningModule):
         out_channels: int = 2,
         feature_size: int = 48,
         use_checkpoint: bool = True,
+        dropout_rate: float = 0.0,
         learning_rate: float = 1e-4,
         lr_scheduler_step: int = 1000,
         lr_reduction_factor: float = 0.2,
@@ -41,6 +42,7 @@ class SemanticSwinUNETR(pl.LightningModule):
             out_channels=out_channels,
             feature_size=feature_size,
             use_checkpoint=use_checkpoint,
+            drop_rate=dropout_rate,
         )
 
         if pretrained_weights_path is not None:
