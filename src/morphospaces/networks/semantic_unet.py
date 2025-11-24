@@ -1,12 +1,12 @@
 """3D Unet for semantic segmentation tasks."""
 
-from typing import Dict, Optional
+from typing import Dict
 
 import pytorch_lightning as pl
 import torch
 from monai.data import decollate_batch
 from monai.inferers import sliding_window_inference
-from monai.losses import DiceCELoss, DeepSupervisionLoss
+from monai.losses import DeepSupervisionLoss, DiceCELoss
 from monai.metrics import DiceMetric
 from monai.networks.nets import DynUNet
 from monai.transforms import AsDiscrete
@@ -18,16 +18,13 @@ from morphospaces.logging.image import log_images
 class SemanticDynUNet(pl.LightningModule):
     def __init__(
         self,
-        pretrained_weights_path: Optional[str] = None,
         image_key: str = "raw",
         labels_key: str = "label",
         in_channels: int = 1,
         out_channels: int = 2,
-        kernel_size: tuple[int] = (3, 3, 3, 3, 3),
-        strides: tuple[int] = (1, 2, 2, 2, 2),
-        upsample_kernel_size: tuple[int]=(2, 2, 2, 2),
-        feature_size: int = 48,
-        use_checkpoint: bool = True,
+        kernel_size: tuple[int] = (3, 3, 3, 3, 3, 3),
+        strides: tuple[int] = (1, 2, 2, 2, 2, 2),
+        upsample_kernel_size: tuple[int] = (2, 2, 2, 2, 2),
         dropout_rate: float = 0.0,
         learning_rate: float = 1e-4,
         lr_scheduler_step: int = 1000,
@@ -42,7 +39,7 @@ class SemanticDynUNet(pl.LightningModule):
         self.save_hyperparameters()
 
         # make the model
-        deep_supr_num = max(1, len(strides) - 1)
+        deep_supr_num = max(1, len(strides) - 2)
         model = DynUNet(
             spatial_dims=3,
             kernel_size=kernel_size,
@@ -55,11 +52,6 @@ class SemanticDynUNet(pl.LightningModule):
             dropout=dropout_rate,
         )
 
-        if pretrained_weights_path is not None:
-            # load the pre-trained encoder weights
-            weights = torch.load(pretrained_weights_path, weights_only=True)
-            model.load_from(weights=weights)
-
         self._model = model
 
         # post-processing transforms for validation
@@ -67,7 +59,9 @@ class SemanticDynUNet(pl.LightningModule):
         self.post_label = AsDiscrete(to_onehot=out_channels)
 
         # metrics for training and validation
-        self.loss_function = DeepSupervisionLoss(DiceCELoss(to_onehot_y=True, softmax=True))
+        self.loss_function = DeepSupervisionLoss(
+            DiceCELoss(to_onehot_y=True, softmax=True)
+        )
         self.validation_metric = DiceMetric(
             include_background=False, reduction="mean", get_not_nans=False
         )
@@ -113,6 +107,9 @@ class SemanticDynUNet(pl.LightningModule):
 
         # make the forward pass and compute the loss
         logits = self.forward(images)
+
+        # for the deep supervision make each scale an element of the list
+        logits = torch.unbind(logits, dim=1)
         loss = self.loss_function(logits, labels)
 
         # log the loss and learning rate
