@@ -27,6 +27,7 @@ class SemanticDynUNet(pl.LightningModule):
         upsample_kernel_size: tuple[int] = (2, 2, 2, 2, 2),
         dropout_rate: float = 0.0,
         learning_rate: float = 1e-4,
+        lr_scheduler_interval: str = "step",
         lr_scheduler_step: int = 1000,
         lr_reduction_factor: float = 0.2,
         lr_reduction_patience: int = 15,
@@ -90,7 +91,7 @@ class SemanticDynUNet(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": learning_rate_scheduler,
-                "interval": "step",
+                "interval": self.hparams.lr_scheduler_interval,
                 "frequency": self.hparams.lr_scheduler_step,
                 "monitor": "val_loss",
             },
