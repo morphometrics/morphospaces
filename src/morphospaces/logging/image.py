@@ -26,7 +26,12 @@ def log_images(
     }
     img_sources = {}
     for name, batch in inputs_map.items():
-        img_sources[name] = batch.data.cpu().numpy()
+        if isinstance(batch, tuple | list):
+            # handle the deep supervision case
+            # each scale is an element of the list/tuple
+            img_sources[name] = batch[0].data.cpu().numpy()
+        else:
+            img_sources[name] = batch.data.cpu().numpy()
 
     for name, batch in img_sources.items():
         for tag, image in create_tensorboard_tagged_image(name, batch, mask):

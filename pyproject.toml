@@ -1,7 +1,83 @@
 [build-system]
-requires = ["setuptools>=42.0.0", "wheel", "setuptools_scm"]
+requires = [
+    "setuptools>=61.2",
+    "setuptools-scm",
+]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "morphospaces"
+description = "a library for creating  and exploring morphospaces."
+authors = [{name = "Kevin Yamauchi", email = "kevin.yamauchi@gmail.com"}]
+license = {text = "BSD-3-Clause"}
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "dask",
+    "einops",
+    "h5py",
+    "magicgui",
+    "monai",
+    "numpy",
+    "pytorch-lightning",
+    "qtpy",
+    "rich",
+    "scikit-image",
+    "scipy",
+    "tensorboard",
+    "torch",
+    "torchvision",
+    "typer",
+]
+dynamic = ["version"]
+
+[project.readme]
+file = "README.md"
+content-type = "text/markdown"
+
+[project.urls]
+Homepage = "https://github.com/morphometrics/morphospaces"
+"Bug Tracker" = "https://github.com/morphometrics/morphospace/issues"
+Documentation = "https://github.com/morphometrics/morphospace#README.md"
+"Source Code" = "https://github.com/morphometrics/morphospace"
+"User Support" = "https://github.com/morphometrics/morphospace/issues"
+
+[project.optional-dependencies]
+testing = [
+    "napari",
+    "pyqt5",
+    "pytest",
+    "pytest-cov",
+    "pytest-qt",
+    "tox",
+]
+
+[project.scripts]
+morphospaces = "morphospaces.cli.main:app"
+
+[tool.setuptools]
+include-package-data = true
+package-dir = {"" = "src"}
+license-files = ["LICENSE"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml"]
 
 [tool.setuptools_scm]
 write_to = "src/morphospaces/_version.py"
