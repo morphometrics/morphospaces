@@ -30,15 +30,15 @@ def unit_sigmoid(x: torch.Tensor, steepness: float = 6):
     return (sig - sig_min) / (sig_max - sig_min)
 
 
-class MaskedSoftSkeletonRecallLoss(torch.nn.Module):
-    def __init__(self, sigmoid_steepness: float = 6, smooth: float = 0.005):
+class MaskedRegressionSoftSkeletonRecallLoss(torch.nn.Module):
+    def __init__(self, sigmoid_steepness: float = 10, smooth: float = 0.005):
         """ """
         super().__init__()
 
         self.sigmoid_steepness = sigmoid_steepness
         self.smooth = smooth
 
-    def forward(self, prediction, labels, loss_mask=None):
+    def forward(self, prediction, labels, mask=None):
 
         # apply the sigmoid so all values are between 0 and 1
         normalized_prediction = unit_sigmoid(
@@ -48,17 +48,58 @@ class MaskedSoftSkeletonRecallLoss(torch.nn.Module):
 
         with torch.no_grad():
             # count the number of skeleton voxels
-            sum_gt = (
-                labels.sum()
-                if loss_mask is None
-                else (labels * loss_mask).sum()
-            )
+            sum_gt = labels.sum() if mask is None else (labels * mask).sum()
 
         # compute the number of true positive
         n_true_positives = (
             (normalized_prediction * labels).sum()
-            if loss_mask is None
-            else (normalized_prediction * labels * loss_mask).sum()
+            if mask is None
+            else (normalized_prediction * labels * mask).sum()
+        )
+
+        # compute the recall
+        recall = (n_true_positives + self.smooth) / (
+            torch.clip(sum_gt + self.smooth, 1e-8)
+        )
+
+        recall = recall.mean()
+        return -recall
+
+
+class MaskedSegmentationSoftSkeletonRecallLoss(torch.nn.Module):
+    def __init__(
+        self,
+        sigmoid_steepness: float = 10,
+        smooth: float = 0.005,
+        segmentation_channel: int = 1,
+    ):
+        """ """
+        super().__init__()
+
+        self.sigmoid_steepness = sigmoid_steepness
+        self.smooth = smooth
+        self.segmentation_channel = segmentation_channel
+
+    def forward(self, prediction, labels, mask=None):
+
+        # apply the sigmoid so all values are between 0 and 1
+        normalized_prediction = torch.nn.functional.softmax(prediction, dim=1)
+
+        # select the segmentation channel and make it have a channel dimension
+        normalized_prediction = normalized_prediction[
+            :, self.segmentation_channel, ...
+        ]
+        normalized_prediction = torch.unsqueeze(normalized_prediction, 1)
+
+        with torch.no_grad():
+            # count the number of skeleton voxels
+            sum_gt = labels.sum() if mask is None else (labels * mask).sum()
+
+        # compute the number of true positive
+        n_true_positives = (
+            (normalized_prediction * labels).sum()
+            if mask is None
+            else (normalized_prediction * labels * mask).sum()
         )
 
         # compute the recall

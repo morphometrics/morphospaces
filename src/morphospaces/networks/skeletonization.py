@@ -16,6 +16,9 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from morphospaces.logging.image import log_images
 from morphospaces.losses.regression import MaskedSmoothL1Loss
+from morphospaces.losses.skeletonization import (
+    MaskedRegressionSoftSkeletonRecallLoss,
+)
 from morphospaces.losses.util import MaskedDeepSupervisionLoss
 
 
@@ -214,6 +217,7 @@ class SkeletonizationRegressionDynUNet(pl.LightningModule):
         self,
         image_key: str = "raw",
         labels_key: str = "label",
+        skeleton_key: str = "skeleton",
         segmentation_key: str = "segmentation",
         in_channels: int = 1,
         out_channels: int = 2,
@@ -221,6 +225,7 @@ class SkeletonizationRegressionDynUNet(pl.LightningModule):
         strides: tuple[int] = (1, 2, 2, 2, 2, 2),
         upsample_kernel_size: tuple[int] = (2, 2, 2, 2, 2),
         dropout_rate: float = 0.0,
+        skeleton_recall_factor: float = 0.01,
         learning_rate: float = 1e-4,
         lr_scheduler_interval: str = "step",
         lr_scheduler_step: int = 1000,
@@ -255,10 +260,14 @@ class SkeletonizationRegressionDynUNet(pl.LightningModule):
         self.post_label = AsDiscrete(to_onehot=out_channels)
 
         # metrics for training and validation
-        self.loss_function = MaskedDeepSupervisionLoss(
+        self.regression_loss = MaskedDeepSupervisionLoss(
             MaskedSmoothL1Loss(reduction="mean")
         )
-
+        self.skeleton_recall_loss = MaskedDeepSupervisionLoss(
+            MaskedRegressionSoftSkeletonRecallLoss(
+                sigmoid_steepness=10, smooth=0.005
+            )
+        )
         # parameters to track training
         self.iteration_count = 0
         self.validation_step_outputs = []
@@ -297,6 +306,7 @@ class SkeletonizationRegressionDynUNet(pl.LightningModule):
         """
         images = batch[self.hparams.image_key]
         labels = batch[self.hparams.labels_key]
+        skeleton = batch[self.hparams.skeleton_key]
         segmentation = batch[self.hparams.segmentation_key]
 
         # make the forward pass and compute the loss
@@ -304,8 +314,20 @@ class SkeletonizationRegressionDynUNet(pl.LightningModule):
 
         # for the deep supervision make each scale an element of the list
         prediction = torch.unbind(prediction, dim=1)
-        loss = self.loss_function(
+        regression_loss = self.regression_loss(
             input=prediction, target=labels, mask=segmentation
+        )
+
+        skeleton_loss = self.skeleton_recall_loss(
+            input=prediction,
+            target=skeleton,
+            mask=segmentation,
+        )
+
+        # sum the losses
+        loss = (
+            regression_loss
+            + self.hparams.skeleton_recall_factor * skeleton_loss
         )
 
         # log the loss and learning rate
@@ -316,14 +338,30 @@ class SkeletonizationRegressionDynUNet(pl.LightningModule):
             prog_bar=True,
             sync_dist=self.hparams.distributed_training,
         )
+        self.log(
+            "regression_loss",
+            regression_loss,
+            batch_size=len(images),
+            prog_bar=True,
+            sync_dist=self.hparams.distributed_training,
+        )
+        self.log(
+            "skeleton_loss",
+            skeleton_loss,
+            batch_size=len(images),
+            prog_bar=True,
+            sync_dist=self.hparams.distributed_training,
+        )
 
         # log the images
         if (self.iteration_count % self.hparams.log_image_every_n) == 0:
+            with torch.no_grad():
+                masked_prediction = [p * segmentation for p in prediction]
             # only log every 200 iterations
             log_images(
                 input=images,
                 target=labels,
-                prediction=prediction,
+                prediction=masked_prediction,
                 iteration_index=self.iteration_count,
                 logger=self.logger.experiment,
             )
@@ -340,6 +378,7 @@ class SkeletonizationRegressionDynUNet(pl.LightningModule):
         # get the images
         images = batch[self.hparams.image_key]
         labels = batch[self.hparams.labels_key]
+        skeleton = batch[self.hparams.skeleton_key]
         segmentation = batch[self.hparams.segmentation_key]
 
         # infer on the whole patch with sliding window
@@ -350,8 +389,20 @@ class SkeletonizationRegressionDynUNet(pl.LightningModule):
         )
 
         # compute the loss
-        loss = self.loss_function(
+        regression_loss = self.regression_loss(
             input=outputs, target=labels, mask=segmentation
+        )
+
+        skeleton_loss = self.skeleton_recall_loss(
+            input=outputs,
+            target=skeleton,
+            mask=segmentation,
+        )
+
+        # sum the losses
+        loss = (
+            regression_loss
+            + self.hparams.skeleton_recall_factor * skeleton_loss
         )
 
         # store the val loss

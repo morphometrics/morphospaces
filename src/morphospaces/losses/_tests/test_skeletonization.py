@@ -1,6 +1,8 @@
 import torch
 
-from morphospaces.losses.skeletonization import MaskedSoftSkeletonRecallLoss
+from morphospaces.losses.skeletonization import (
+    MaskedRegressionSoftSkeletonRecallLoss,
+)
 
 
 def test_masked_soft_skeleton_recall():
@@ -25,7 +27,7 @@ def test_masked_soft_skeleton_recall():
 
     # Make the loss
     smooth_factor = 0.005
-    loss_function = MaskedSoftSkeletonRecallLoss(
+    loss_function = MaskedRegressionSoftSkeletonRecallLoss(
         sigmoid_steepness=10, smooth=smooth_factor
     )
 
